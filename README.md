@@ -37,23 +37,27 @@ A fast, client‑side log viewer built with Vite + React + TypeScript. Drag and 
 - MSI: `MSI (c|s) (...) [HH:mm:ss:SSS]` (time‑only; date inferred from file), or `[YYYY-MM-DD HH:mm:ss:SSS]`
 
 ## Getting Started
+
+**Local Install**
 - Requirements: Node.js 18+ and npm
 - Install: `npm install`
-- Dev: `npm run dev` (binds `0.0.0.0`), then visit `http://<your-ip>:5173`
+- Dev: `npm run dev` (binds `0.0.0.0`), then visit `http://localhost:5173` or `http://yourip:5173` from network devices
 - Build: `npm run build`
-- Preview: `npm run preview` (binds `0.0.0.0`) at `http://<your-ip>:4173`
 
+**Docker (recommended)**
+- Clone repo
+- Build the image: `docker build -t logninja .`
+- Run the container: `docker run --rm -p 8080:80 logninja`
+- Open http://localhost:8080
+
+Alternatively, run the container using `docker run --rm -p 8080:80 alexschladetsch/logninja:latest`
+ 
 ## Keyboard & Tips
 - `/` focuses search, `Ctrl/Cmd+K` opens command palette
 - Click a row, then `Ctrl/Cmd+C` to copy its full raw text
 - Use the Wrap toggle for multi‑line viewing; disable for horizontal scrolling
+- Try and find the pizza-flavoured easter egg
 
 ## Privacy
 The app runs fully in your browser; logs are not uploaded. Exports are generated locally.
  
-## Notes on Airlock Linux vs Windows
-- Linux agent events differ from Windows; the app accounts for this:
-  - Executions are read from `FILE CHECK Filename=` lines (not Windows SUCCESS lines)
-  - Policy DB cues prefer `Init Policy:` (loaded) and `Policy Update … current version is N`
-  - Metarule counts use unique names to avoid duplicates
-- Filters are OS-aware and highlight matches in the message column.
