@@ -1,0 +1,11 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Base themes */
+html, body, #root { height: 100%; }
+body { @apply bg-gray-50 text-gray-900 dark:bg-gray-900 dark:text-gray-100; }
+
+/* Simple scrollbar tweaks */
+*::-webkit-scrollbar { height: 10px; width: 10px; }
+*::-webkit-scrollbar-thumb { background-color: rgba(125,125,125,0.35); border-radius: 6px; }
