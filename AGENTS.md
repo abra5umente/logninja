@@ -61,3 +61,30 @@
 ## Security & Configuration Tips
 - This app runs fully client‑side; avoid committing sensitive logs. Use `public/sample.log` for examples.
 - Large files: prefer links or sanitized snippets. Validate regex features when sharing filters.
+
+## Theming & Accent
+- Dark mode: Tailwind `dark` class toggled on `html` via helpers in `src/lib/theme.ts` (`applyTheme`, `getInitialTheme`, persisted in `localStorage`).
+- Accent color: global CSS var `--accent` defined in `src/index.css`; update via `applyAccent`/`getInitialAccent` (persisted). Components use accent for focus rings, borders, links, and selected states.
+- Settings sidebar: `src/components/SettingsSidebar.tsx` includes light/dark toggle, accent picker, keymap, and footer with version and GitHub link. Open via the gear in the header.
+
+## Branding
+- Vertical banner: `src/components/BrandingBanner.tsx` renders a fixed, rotated “logninja.” watermark along the left gutter. It sits behind the app (`-z-10`) and is clipped to a narrow gutter to avoid overlaying content. Includes a first‑load typing effect (respects reduced motion).
+- Header: the large app title is removed from the top bar; branding appears in the Settings sidebar footer as `LogNinja v0.1.0-beta` next to the GitHub link.
+
+## Pizza Easter Egg
+- Trigger: open Command Palette (Ctrl/Cmd+K) and type `pizza`.
+- Effect: body gets `pizza-mode` which draws a subtle tiled pizza overlay via `body.pizza-mode::before` in `src/index.css`.
+  - Light mode opacity ~0.18; Dark mode opacity ~0.20.
+- Asset: `src/assets/pizza.png`. URL is resolved at runtime using `new URL('../assets/pizza.png', import.meta.url)` inside `enablePizzaTheme()`.
+
+## Containerization
+- Dockerfile: multi‑stage build (Node 18 Alpine → Nginx). Builds with `npm ci && npm run build`, serves `dist/` via Nginx.
+- Nginx: SPA fallback config in `nginx.conf`; assets served with long cache headers.
+- Quickstart:
+  - Build: `docker build -t logninja .`
+  - Run: `docker run --rm -p 8080:80 logninja` then visit `http://localhost:8080`.
+
+## UI Notes (Recent)
+- Export modal: themed for readability; buttons use accent focus ring; textarea colors match theme.
+- Timeline: bars use accent color with opacity; filters and selects use accent focus rings.
+- Virtual table: Wrap toggle uses accent focus ring; selected row shows accent left border; header layout flexes so the Wrap button stays aligned when resizing.

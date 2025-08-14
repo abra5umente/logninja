@@ -52,3 +52,5 @@ temp/
 *.swo
 ~$*
 
+# Project docs (local only)
+AGENTS.md
