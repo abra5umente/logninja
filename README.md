@@ -11,18 +11,6 @@ A fast, client‑side log viewer built with Vite + React + TypeScript. Drag and 
 - Row selection + Ctrl/Cmd+C to copy the full raw line
 - Bookmarks: star lines and export them (CSV/Markdown includes “Bookmarked Lines”)
 - Airlock summary (auto when filename includes `airlock`; Windows + Linux agents):
-  - Core: Version, Proxy Configured, Primary Airlock Server, Interops Found
-  - Policy: Policy DB Loaded (Windows: “Opening Policy database”; Linux: “Init Policy: …”), Policy DB Version (prefers “Policy Update … current version is N” on Linux)
-  - Modes/Config: Audit Mode, AutoUpdate Enabled, Powershell Constrained Mode
-  - Data loads: File Extensions Added, Publishers Loaded, Path Exclusions, Assembly Reflection Enabled, Self Service Enabled
-  - Metarules (deduped by name):
-    - Blocklist Metarules loaded (Windows: “Loading Blocklist Metarule: …”; Linux: “Loading metarules … Metarule: …”)
-    - Allowlist Metarules loaded (Windows: “Loading Allowlist Metarule: …”; Linux: “Loading ametarules … Metarule: …”)
-  - Parent Processes (deduped): Windows “Loading Parent Process: …”; Linux “Loading Process Exclusion (pprocesses): …”
-  - Executions:
-    - Windows: count by “Responding to Kernel ~ Filename: … ~ SUCCESS”
-    - Linux: count by timestamped “FILE CHECK Filename=…”. Top Executed File computed from same source
-  - Click any value to filter main table; OS-aware tokens and auto-regex toggle applied
 
 ## Supported Formats (non‑exhaustive)
 - ISO/RFC3339, `YYYY-MM-DD HH:mm:ss[.SSS|,SSS]`
