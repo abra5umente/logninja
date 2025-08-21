@@ -13,17 +13,31 @@ interface Props {
 
 const ROW_HEIGHT = 28 // px
 const OVERSCAN = 12
+const DEFAULT_ROWS = 100
+const DEFAULT_HEIGHT = DEFAULT_ROWS * ROW_HEIGHT // 2800px
 
 function formatTime(entry: LogEntry): string {
   if (entry.time) return entry.time.toISOString()
   return entry.timeStr || ''
 }
 
-export default function VirtualTable({ rows, height = 520, highlightRe = null, bookmarked, onToggleBookmark, selectedIndex = null, onSelectRow }: Props) {
+export default function VirtualTable({ rows, height: propHeight, highlightRe = null, bookmarked, onToggleBookmark, selectedIndex = null, onSelectRow }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [scrollTop, setScrollTop] = useState(0)
   const [wrapLines, setWrapLines] = useState(false)
+  const [userRows, setUserRows] = useState(() => {
+    const saved = localStorage.getItem('virtualTableRows')
+    return saved ? parseInt(saved, 10) : DEFAULT_ROWS
+  })
+  
+  // Always use user preference for rows, but respect minimum height
+  const height = Math.max(propHeight ?? 0, userRows * ROW_HEIGHT)
   const totalHeight = rows.length * ROW_HEIGHT
+
+  // Save user preference to localStorage
+  useEffect(() => {
+    localStorage.setItem('virtualTableRows', userRows.toString())
+  }, [userRows])
 
   useEffect(() => {
     const el = containerRef.current
@@ -65,24 +79,46 @@ export default function VirtualTable({ rows, height = 520, highlightRe = null, b
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [rows, selectedIndex])
 
+  const handleRowsChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = parseInt(e.target.value, 10)
+    if (!isNaN(value) && value > 0 && value <= 1000) {
+      setUserRows(value)
+    }
+  }
+
   return (
     <div className="border border-gray-200 dark:border-gray-700 rounded-md overflow-hidden bg-white dark:bg-gray-800">
       <div className="overflow-x-auto">
         <div className="min-w-[900px]">
           <div className="flex items-center justify-between bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-100 px-3 py-2 text-xs">
-            <div className={`grid ${gridCols} gap-0.5 font-semibold w-[calc(100%-8rem)]`}>
+            <div className={`grid ${gridCols} gap-0.5 font-semibold w-[calc(100%-16rem)]`}>
               <div title="Bookmark" className="text-center">★</div>
               <div>Time</div>
               <div>Level</div>
               <div>Message</div>
             </div>
-            <button
-              className="ml-3 px-2 py-1 border border-gray-300 dark:border-gray-600 rounded text-[11px] hover:bg-gray-50 dark:hover:bg-gray-600"
-              onClick={() => setWrapLines(w => !w)}
-              title={wrapLines ? 'Switch to single-line with horizontal scroll' : 'Wrap long lines'}
-            >
-              {wrapLines ? 'Wrap: On' : 'Wrap: Off'}
-            </button>
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2">
+                <label htmlFor="rows-input" className="text-[11px]">Rows:</label>
+                <input
+                  id="rows-input"
+                  type="number"
+                  min="1"
+                  max="1000"
+                  value={userRows}
+                  onChange={handleRowsChange}
+                  className="w-16 px-2 py-1 border border-gray-300 dark:border-gray-600 rounded text-[11px] bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                  title="Set number of visible rows"
+                />
+              </div>
+              <button
+                className="px-2 py-1 border border-gray-300 dark:border-gray-600 rounded text-[11px] hover:bg-gray-50 dark:hover:bg-gray-600"
+                onClick={() => setWrapLines(w => !w)}
+                title={wrapLines ? 'Switch to single-line with horizontal scroll' : 'Wrap long lines'}
+              >
+                {wrapLines ? 'Wrap: On' : 'Wrap: Off'}
+              </button>
+            </div>
           </div>
           <div ref={containerRef} style={{ height }} className="relative overflow-y-auto">
             {useVirtual ? (

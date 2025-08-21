@@ -13,6 +13,9 @@ import CommandPalette, { CommandItem } from './components/CommandPalette'
 import { rowsToCSV } from './lib/export'
 import { AIRLOCK_FIELDS, extractAirlockSummary, isAirlockDebugFileName } from './lib/airlockSummary'
 import AirlockSummary from './components/AirlockSummary'
+import SettingsSidebar from './components/SettingsSidebar'
+import { applyTheme, saveTheme, applyAccent, saveAccent, getInitialTheme, getInitialAccent } from './lib/theme'
+import BrandingBanner from './components/BrandingBanner'
 
 export default function App() {
   const [fileName, setFileName] = useState<string>('')
@@ -23,6 +26,9 @@ export default function App() {
     useRegex: false,
     timeRange: null,
   })
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [theme, setTheme] = useState<'light' | 'dark'>('dark')
+  const [accent, setAccent] = useState('#30F24E')
   const [binMs, setBinMs] = useState<number>(60000)
   const [highlightEnabled, setHighlightEnabled] = useState<boolean>(true)
   const [cmdOpen, setCmdOpen] = useState(false)
@@ -107,6 +113,16 @@ export default function App() {
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [])
+  
+  useEffect(() => {
+    applyTheme(theme)
+    saveTheme(theme)
+  }, [theme])
+
+  useEffect(() => {
+    applyAccent(accent)
+    saveAccent(accent)
+  }, [accent])
 
   const runDownloadCsv = () => {
     const csv = rowsToCSV(filtered)
@@ -144,62 +160,94 @@ export default function App() {
   ]
 
   return (
-    <div className="max-w-[1400px] mx-auto p-4">
-      <header className="mb-4 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold text-gray-900">Log Slicer</h1>
-          <p className="text-sm text-gray-600">Client-side log viewer with search and filters</p>
-        </div>
-        <div className="flex items-center gap-2">
-          {fileName && <span className="text-xs text-gray-500">Loaded: {fileName}</span>}
-        </div>
-      </header>
+    <>
+      <BrandingBanner />
+      <div className="relative z-10 max-w-[1400px] mx-auto p-4">
+        <header className="mb-4 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h1 className="text-2xl font-semibold text-gray-900 dark:text-gray-100">LogNinja</h1>
+            <p className="text-sm text-gray-600 dark:text-gray-400">Client-side log viewer with search and filters</p>
+          </div>
+          <div className="flex items-center gap-2">
+            {fileName && <span className="text-xs text-gray-500">Loaded: {fileName}</span>}
+            <button
+              type="button"
+              className="ml-2 p-2 rounded border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800"
+              onClick={() => setSettingsOpen(true)}
+              aria-label="Open settings"
+              title="Settings"
+              style={{ color: 'var(--accent)' }}
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 20 20"
+                fill="currentColor"
+                className="w-5 h-5"
+              >
+                <path
+                  fillRule="evenodd"
+                  d="M7.84 1.804A1 1 0 018.82 1h2.36a1 1 0 01.98.804l.331 1.652a6.993 6.993 0 011.929 1.115l1.598-.54a1 1 0 011.186.447l1.18 2.044a1 1 0 01-.205 1.251l-1.267 1.113a7.047 7.047 0 010 2.228l1.267 1.113a1 1 0 01.205 1.251l-1.18 2.044a1 1 0 01-1.186.447l-1.598-.54a6.993 6.993 0 01-1.929 1.115l-.331 1.652a1 1 0 01-.98.804H8.82a1 1 0 01-.98-.804l-.331-1.652a6.993 6.993 0 01-1.929-1.115l-1.598.54a1 1 0 01-1.186-.447l-1.18-2.044a1 1 0 01.205-1.251l1.267-1.114a7.05 7.05 0 010-2.227L1.821 7.773a1 1 0 01-.205-1.251l1.18-2.044a1 1 0 011.186-.447l1.598.54A6.993 6.993 0 017.509 3.456l.331-1.652zM10 13a3 3 0 100-6 3 3 0 000 6z"
+                  clipRule="evenodd"
+                />
+              </svg>
+            </button>
+          </div>
+        </header>
 
-      <div className="mb-4">
-        <FileDropZone onText={onText} />
-      </div>
-
-      <div className="mb-3 flex flex-col md:flex-row gap-3 md:items-center md:justify-between">
-        <LevelFilters active={filters.levels} onToggle={toggleLevel} />
-        <div className="flex items-center gap-3">
-          <PresetsDropdown onSelect={(pattern) => setFilters(f => ({ ...f, query: pattern, useRegex: true }))} />
-          <SearchBar
-            query={filters.query}
-            setQuery={(q) => setFilters(f => ({ ...f, query: q }))}
-            useRegex={filters.useRegex}
-            setUseRegex={(b) => setFilters(f => ({ ...f, useRegex: b }))}
-            ref={searchInputRef}
-          />
+        <div className="mb-4">
+          <FileDropZone onText={onText} />
         </div>
-      </div>
 
-      {airlockSummary && (
+        <div className="mb-3 flex flex-col md:flex-row gap-3 md:items-center md:justify-between">
+          <LevelFilters active={filters.levels} onToggle={toggleLevel} />
+          <div className="flex items-center gap-3">
+            <PresetsDropdown onSelect={(pattern) => setFilters(f => ({ ...f, query: pattern, useRegex: true }))} />
+            <SearchBar
+              query={filters.query}
+              setQuery={(q) => setFilters(f => ({ ...f, query: q }))}
+              useRegex={filters.useRegex}
+              setUseRegex={(b) => setFilters(f => ({ ...f, useRegex: b }))}
+              ref={searchInputRef}
+            />
+          </div>
+        </div>
+
+        {airlockSummary && (
+          <div className="mb-3">
+            <AirlockSummary
+              data={airlockSummary}
+              collapsed={airlockCollapsed}
+              setCollapsed={setAirlockCollapsed}
+              onFilterText={(text, useRegex = false) => setFilters(f => ({ ...f, query: text, useRegex }))}
+            />
+          </div>
+        )}
+
         <div className="mb-3">
-          <AirlockSummary
-            data={airlockSummary}
-            collapsed={airlockCollapsed}
-            setCollapsed={setAirlockCollapsed}
-            onFilterText={(text, useRegex = false) => setFilters(f => ({ ...f, query: text, useRegex }))}
+          <ExportBar rows={filtered} filters={filters} bookmarked={bookmarkedRows} />
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-[1fr_320px] lg:grid-cols-[1fr_380px] gap-4">
+          <VirtualTable rows={filtered} height={560} highlightRe={highlightRe} bookmarked={bookmarked} onToggleBookmark={toggleBookmark} selectedIndex={selectedIndex} onSelectRow={setSelectedIndex} />
+          <TimelinePanel
+            entries={entries}
+            binMs={binMs}
+            setBinMs={setBinMs}
+            onSelectRange={(r) => setFilters(f => ({ ...f, timeRange: r }))}
+            activeRange={filters.timeRange ?? null}
           />
         </div>
-      )}
 
-      <div className="mb-3">
-        <ExportBar rows={filtered} filters={filters} bookmarked={bookmarkedRows} />
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-[1fr_320px] lg:grid-cols-[1fr_380px] gap-4">
-        <VirtualTable rows={filtered} height={560} highlightRe={highlightRe} bookmarked={bookmarked} onToggleBookmark={toggleBookmark} selectedIndex={selectedIndex} onSelectRow={setSelectedIndex} />
-        <TimelinePanel
-          entries={entries}
-          binMs={binMs}
-          setBinMs={setBinMs}
-          onSelectRange={(r) => setFilters(f => ({ ...f, timeRange: r }))}
-          activeRange={filters.timeRange ?? null}
+        <CommandPalette open={cmdOpen} onClose={() => setCmdOpen(false)} items={commands} />
+        <SettingsSidebar
+          open={settingsOpen}
+          onClose={() => setSettingsOpen(false)}
+          theme={theme}
+          setTheme={setTheme}
+          accent={accent}
+          setAccent={setAccent}
         />
       </div>
-
-      <CommandPalette open={cmdOpen} onClose={() => setCmdOpen(false)} items={commands} />
-    </div>
+    </>
   )
 }

@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
+import { enablePizzaTheme } from '../lib/pizzaTheme'
 
 export interface CommandItem {
   id: string
@@ -6,7 +7,11 @@ export interface CommandItem {
   run: () => void
 }
 
-export default function CommandPalette({ open, onClose, items }: { open: boolean; onClose: () => void; items: CommandItem[] }) {
+export default function CommandPalette({ open, onClose, items }: {
+  open: boolean;
+  onClose: () => void;
+  items: CommandItem[]
+}) {
   const [query, setQuery] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -41,9 +46,16 @@ export default function CommandPalette({ open, onClose, items }: { open: boolean
           <input
             ref={inputRef}
             value={query}
-            onChange={e => setQuery(e.target.value)}
+            onChange={(e) => {
+              const value = e.target.value
+              setQuery(value)
+              // Pizza easter egg trigger
+              if (value.trim().toLowerCase() === 'pizza') {
+                enablePizzaTheme()
+              }
+            }}
             placeholder="Type a command…"
-            className="w-full px-3 py-2 text-sm bg-transparent outline-none"
+            className="w-full px-3 py-2 text-sm bg-transparent outline-none focus:outline-none focus:ring-2 focus:ring-[var(--accent)] rounded"
           />
         </div>
         <div className="max-h-80 overflow-auto">
@@ -64,4 +76,3 @@ export default function CommandPalette({ open, onClose, items }: { open: boolean
     </div>
   )
 }
-

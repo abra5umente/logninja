@@ -88,7 +88,7 @@ export default function FileDropZone({ onText }: Props) {
       </div>
       <div className="flex items-center gap-2">
         <button
-          className="px-3 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
+          className="px-3 py-2 text-sm text-white rounded transition-colors bg-[var(--accent)] hover:brightness-90"
           onClick={() => inputRef.current?.click()}
         >
           Browse…
