@@ -29,15 +29,36 @@ export default function VirtualTable({ rows, height: propHeight, highlightRe = n
     const saved = localStorage.getItem('virtualTableRows')
     return saved ? parseInt(saved, 10) : DEFAULT_ROWS
   })
+  const [currentPage, setCurrentPage] = useState(1)
+  
+  // Pagination logic
+  const pageSize = 100
+  const totalPages = Math.ceil(rows.length / pageSize)
+  const shouldPaginate = rows.length > 100
+  
+  // Get current page data
+  const getCurrentPageData = () => {
+    if (!shouldPaginate) return rows
+    const startIndex = (currentPage - 1) * pageSize
+    const endIndex = startIndex + pageSize
+    return rows.slice(startIndex, endIndex)
+  }
+  
+  const currentPageData = getCurrentPageData()
   
   // Always use user preference for rows, but respect minimum height
   const height = Math.max(propHeight ?? 0, userRows * ROW_HEIGHT)
-  const totalHeight = rows.length * ROW_HEIGHT
+  const totalHeight = currentPageData.length * ROW_HEIGHT
 
   // Save user preference to localStorage
   useEffect(() => {
     localStorage.setItem('virtualTableRows', userRows.toString())
   }, [userRows])
+
+  // Reset to first page when rows change
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [rows.length])
 
   useEffect(() => {
     const el = containerRef.current
@@ -50,12 +71,12 @@ export default function VirtualTable({ rows, height: propHeight, highlightRe = n
   const { start, end } = useMemo(() => {
     const startIndex = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN)
     const visibleCount = Math.ceil(height / ROW_HEIGHT) + 2 * OVERSCAN
-    const endIndex = Math.min(rows.length - 1, startIndex + visibleCount)
+    const endIndex = Math.min(currentPageData.length - 1, startIndex + visibleCount)
     return { start: startIndex, end: endIndex }
-  }, [scrollTop, rows.length, height])
+  }, [scrollTop, currentPageData.length, height])
 
   const useVirtual = !wrapLines
-  const items = useVirtual ? rows.slice(start, end + 1) : rows
+  const items = useVirtual ? currentPageData.slice(start, end + 1) : currentPageData
   const offsetY = useVirtual ? start * ROW_HEIGHT : 0
   const gridCols = wrapLines ? 'grid-cols-[24px_200px_90px_1fr]' : 'grid-cols-[24px_200px_90px_max-content]'
   const msgCellClass = wrapLines ? 'text-gray-900 dark:text-gray-100 whitespace-pre-wrap break-words' : 'text-gray-900 dark:text-gray-100 whitespace-nowrap'
@@ -111,13 +132,36 @@ export default function VirtualTable({ rows, height: propHeight, highlightRe = n
                   title="Set number of visible rows"
                 />
               </div>
-              <button
-                className="px-2 py-1 border border-gray-300 dark:border-gray-600 rounded text-[11px] hover:bg-gray-50 dark:hover:bg-gray-600"
-                onClick={() => setWrapLines(w => !w)}
-                title={wrapLines ? 'Switch to single-line with horizontal scroll' : 'Wrap long lines'}
-              >
-                {wrapLines ? 'Wrap: On' : 'Wrap: Off'}
-              </button>
+                             <button
+                 className="px-2 py-1 border border-gray-300 dark:border-gray-600 rounded text-[11px] hover:bg-gray-50 dark:hover:bg-gray-600"
+                 onClick={() => setWrapLines(w => !w)}
+                 title={wrapLines ? 'Switch to single-line with horizontal scroll' : 'Wrap long lines'}
+               >
+                 {wrapLines ? 'Wrap: On' : 'Wrap: Off'}
+               </button>
+               {shouldPaginate && (
+                 <div className="flex items-center gap-2">
+                   <button
+                     className="px-2 py-1 border border-gray-300 dark:border-gray-600 rounded text-[11px] hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                     onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                     disabled={currentPage === 1}
+                     title="Previous page"
+                   >
+                     ←
+                   </button>
+                   <span className="text-[11px] text-gray-600 dark:text-gray-300">
+                     {currentPage} / {totalPages}
+                   </span>
+                   <button
+                     className="px-2 py-1 border border-gray-300 dark:border-gray-600 rounded text-[11px] hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                     onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                     disabled={currentPage === totalPages}
+                     title="Next page"
+                   >
+                     →
+                   </button>
+                 </div>
+               )}
             </div>
           </div>
           <div ref={containerRef} style={{ height }} className="relative overflow-y-auto">
@@ -180,9 +224,14 @@ export default function VirtualTable({ rows, height: propHeight, highlightRe = n
           </div>
         </div>
       </div>
-      {rows.length === 0 && (
-        <div className="text-sm text-gray-500 dark:text-gray-400 p-4">No log entries parsed yet.</div>
-      )}
+             {rows.length === 0 && (
+         <div className="text-sm text-gray-500 dark:text-gray-400 p-4">No log entries parsed yet.</div>
+       )}
+       {shouldPaginate && rows.length > 0 && (
+         <div className="text-xs text-gray-500 dark:text-gray-400 px-3 py-2 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700">
+           Showing page {currentPage} of {totalPages} ({rows.length} total entries)
+         </div>
+       )}
     </div>
   )
 }
