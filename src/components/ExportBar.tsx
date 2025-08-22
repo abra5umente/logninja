@@ -6,9 +6,10 @@ interface Props {
   rows: LogEntry[]
   filters: FiltersState
   bookmarked: LogEntry[]
+  resetFilters: () => void
 }
 
-export default function ExportBar({ rows, filters, bookmarked }: Props) {
+export default function ExportBar({ rows, filters, bookmarked, resetFilters }: Props) {
   const [mdOpen, setMdOpen] = useState(false)
   const csv = useMemo(() => rowsToCSV(rows, bookmarked), [rows, bookmarked])
   const md = useMemo(() => buildMarkdownSummary(rows, filters, bookmarked), [rows, filters, bookmarked])
@@ -74,7 +75,8 @@ export default function ExportBar({ rows, filters, bookmarked }: Props) {
         style={{ '--tw-shadow-color': 'var(--accent)' } as React.CSSProperties}
         onMouseEnter={(e) => {
           const target = e.currentTarget;
-          target.style.backgroundColor = getComputedStyle(document.documentElement).getPropertyValue('--accent');
+          const accentColor = getComputedStyle(document.documentElement).getPropertyValue('--accent');
+          target.style.backgroundColor = accentColor;
           target.style.color = 'white';
         }}
         onMouseLeave={(e) => {
@@ -84,6 +86,21 @@ export default function ExportBar({ rows, filters, bookmarked }: Props) {
         }}
         onClick={() => setMdOpen(true)}
       >Markdown Summary</button>
+      <button
+        className="px-3 py-2 text-sm bg-red-200 dark:bg-red-700 text-red-800 dark:text-red-200 rounded transition-colors"
+        style={{ '--tw-shadow-color': 'var(--accent)' } as React.CSSProperties}
+        onMouseEnter={(e) => {
+          const target = e.currentTarget;
+          target.style.backgroundColor = '#ef4444'; // red-500
+          target.style.color = 'white';
+        }}
+        onMouseLeave={(e) => {
+          const target = e.currentTarget;
+          target.style.backgroundColor = '';
+          target.style.color = '';
+        }}
+        onClick={resetFilters}
+      >Reset Filters</button>
       {mdOpen && (
         <MarkdownModal
           markdown={md}

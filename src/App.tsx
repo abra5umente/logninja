@@ -274,7 +274,7 @@ export default function App() {
         )}
 
         <div className="mb-3">
-          <ExportBar rows={filtered} filters={filters} bookmarked={bookmarkedRows} />
+          <ExportBar rows={filtered} filters={filters} bookmarked={bookmarkedRows} resetFilters={runClearFilters} />
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-[1fr_320px] lg:grid-cols-[1fr_380px] gap-4">
