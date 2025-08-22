@@ -13,6 +13,8 @@ import CommandPalette, { CommandItem } from './components/CommandPalette'
 import { rowsToCSV } from './lib/export'
 import { AIRLOCK_FIELDS, extractAirlockSummary, isAirlockDebugFileName } from './lib/airlockSummary'
 import AirlockSummary from './components/AirlockSummary'
+import LogSummary from './components/LogSummary'
+import LoadBanner from './components/LoadBanner'
 import SettingsSidebar from './components/SettingsSidebar'
 import { applyTheme, saveTheme, applyAccent, saveAccent, getInitialTheme, getInitialAccent } from './lib/theme'
 import BrandingBanner from './components/BrandingBanner'
@@ -36,11 +38,14 @@ export default function App() {
   const [airlockSummary, setAirlockSummary] = useState<Record<(typeof AIRLOCK_FIELDS)[number], string> | null>(null)
   const [airlockCollapsed, setAirlockCollapsed] = useState(false)
   const [bookmarked, setBookmarked] = useState<Set<number>>(new Set())
+  const [loadTime, setLoadTime] = useState<number>(0)
+  const [showLoadBanner, setShowLoadBanner] = useState(false)
   const bookmarkedRows = useMemo(() => entries.filter(e => bookmarked.has(e.index)), [entries, bookmarked])
   const toggleBookmark = (idx: number) => setBookmarked(prev => { const n = new Set(prev); if (n.has(idx)) n.delete(idx); else n.add(idx); return n })
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null)
 
   const onText = (text: string, name: string) => {
+    const startTime = performance.now()
     setFileName(name)
     // Airlock Debug Summary: detect by filename and print a two-column table to console.
     try {
@@ -55,6 +60,9 @@ export default function App() {
     }
     const parsed = parseLog(text)
     setEntries(parsed)
+    const endTime = performance.now()
+    setLoadTime(endTime - startTime)
+    setShowLoadBanner(true)
   }
 
   const { re: compiledRe } = useMemo(() => buildSearchRegex(filters.query, filters.useRegex), [filters.query, filters.useRegex])
@@ -175,6 +183,14 @@ export default function App() {
   return (
     <>
       <BrandingBanner />
+      {showLoadBanner && (
+        <LoadBanner
+          fileName={fileName}
+          loadTime={loadTime}
+          entriesCount={entries.length}
+          onClose={() => setShowLoadBanner(false)}
+        />
+      )}
       <div className="relative z-10 max-w-[1400px] mx-auto p-4">
         <header className="mb-4 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
           <div>
@@ -243,6 +259,16 @@ export default function App() {
               collapsed={airlockCollapsed}
               setCollapsed={setAirlockCollapsed}
               onFilterText={(text, useRegex = false) => setFilters(f => ({ ...f, query: text, useRegex }))}
+            />
+          </div>
+        )}
+
+        {entries.length > 0 && (
+          <div className="mb-3">
+            <LogSummary
+              entries={entries}
+              fileName={fileName}
+              loadTime={loadTime}
             />
           </div>
         )}

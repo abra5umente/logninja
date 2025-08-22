@@ -1,0 +1,13 @@
+2024-01-15 10:00:00 INFO Application started
+2024-01-15 10:00:01 DEBUG Loading configuration
+2024-01-15 10:00:02 INFO Configuration loaded successfully
+2024-01-15 10:00:03 WARN Deprecated feature detected
+2024-01-15 10:00:04 DEBUG Processing user input
+2024-01-15 10:00:05 INFO User authentication successful
+2024-01-15 10:00:06 ERROR Database connection failed
+2024-01-15 10:00:07 DEBUG Retrying database connection
+2024-01-15 10:00:08 INFO Database connection restored
+2024-01-15 10:00:09 TRACE Detailed operation log
+2024-01-15 10:00:10 INFO Operation completed
+2024-01-15 10:00:11 DEBUG Cleaning up resources
+2024-01-15 10:00:12 INFO Application shutdown complete
