@@ -1,4 +1,5 @@
-import React from 'react'
+import React, { useState } from 'react'
+import CreditsModal from './CreditsModal'
 
 interface SettingsSidebarProps {
     open: boolean
@@ -25,6 +26,8 @@ export default function SettingsSidebar({
     accent,
     setAccent
 }: SettingsSidebarProps) {
+    const [creditsOpen, setCreditsOpen] = useState(false)
+    
     return (
         <>
             {/* Backdrop */}
@@ -180,7 +183,15 @@ export default function SettingsSidebar({
 
                 {/* Footer */}
                 <div className="p-4 border-t border-gray-200 dark:border-gray-700 flex items-center justify-between">
-                    <span className="text-xs text-gray-500">LogNinja v0.1.0-beta</span>
+                    <div className="flex items-center gap-3">
+                        <span className="text-xs text-gray-500">LogNinja v0.1.1-beta</span>
+                        <button
+                            onClick={() => setCreditsOpen(true)}
+                            className="text-xs text-gray-500 hover:text-[var(--accent)] transition-colors"
+                        >
+                            Credits
+                        </button>
+                    </div>
                     <a
                         href="https://github.com/abra5umente/logninja"
                         target="_blank"
@@ -192,6 +203,9 @@ export default function SettingsSidebar({
                     </a>
                 </div>
             </aside>
+            
+            {/* Credits Modal */}
+            <CreditsModal open={creditsOpen} onClose={() => setCreditsOpen(false)} />
         </>
     )
 }
