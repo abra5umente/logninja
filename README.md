@@ -1,6 +1,8 @@
-# Log Slicer
+# LogNinja
 
 A fast, client‑side log viewer built with Vite + React + TypeScript. Drag and drop logs, filter by level/text/regex, browse a timeline, and export results. Designed to work entirely in the browser (no uploads).
+
+<img width="1698" height="879" alt="image" src="https://github.com/user-attachments/assets/2ef5668d-cac6-4a2e-878f-832a604d51d1" />  
 
 ## Features
 - Drag & drop `.log/.txt/.csv` (UTF‑8/UTF‑16 BOM aware)
@@ -11,6 +13,12 @@ A fast, client‑side log viewer built with Vite + React + TypeScript. Drag and 
 - Row selection + Ctrl/Cmd+C to copy the full raw line
 - Bookmarks: star lines and export them (CSV/Markdown includes “Bookmarked Lines”)
 - Airlock summary (auto when filename includes `airlock`; Windows + Linux agents):
+
+## Screenshots
+<img width="1695" height="898" alt="image" src="https://github.com/user-attachments/assets/ab110c01-878e-4db8-a450-300cdeba7b51" />  
+<img width="1697" height="899" alt="image" src="https://github.com/user-attachments/assets/d0c8dd56-3de6-4835-bb45-d1033aa24287" />  
+<img width="1697" height="896" alt="image" src="https://github.com/user-attachments/assets/cc4bce96-25e8-40da-9392-d7d345ee153d" />  
+
 
 ## Supported Formats (non‑exhaustive)
 - ISO/RFC3339, `YYYY-MM-DD HH:mm:ss[.SSS|,SSS]`
