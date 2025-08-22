@@ -11,7 +11,7 @@ export interface LogEntry {
 }
 
 export interface FiltersState {
-  levels: Set<Exclude<LogLevel, 'UNKNOWN'>>
+  selectedLevel: Exclude<LogLevel, 'UNKNOWN'> | null
   query: string
   useRegex: boolean
   timeRange?: { start: Date; end: Date } | null

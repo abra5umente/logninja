@@ -40,7 +40,7 @@ export function buildMarkdownSummary(rows: LogEntry[], filters: FiltersState, bo
 
   const topMessages = Array.from(messageCounts.entries()).sort((a, b) => b[1] - a[1]).slice(0, 10)
 
-  const activeLevels = Array.from(filters.levels).join(', ')
+  const activeLevels = filters.selectedLevel || 'all'
   const query = filters.query ? (filters.useRegex ? `regex: ${filters.query}` : `text: ${filters.query}`) : 'none'
   const timeRange = filters.timeRange ? `${filters.timeRange.start.toISOString()} → ${filters.timeRange.end.toISOString()}` : 'none'
 

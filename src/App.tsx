@@ -4,7 +4,7 @@ import SearchBar from './components/SearchBar'
 import LevelFilters from './components/LevelFilters'
 import VirtualTable from './components/VirtualTable'
 import { parseLog } from './lib/parse'
-import { FiltersState, LogEntry } from './lib/types'
+import { FiltersState, LogEntry, LogLevel } from './lib/types'
 import TimelinePanel from './components/TimelinePanel'
 import PresetsDropdown from './components/PresetsDropdown'
 import { buildSearchRegex } from './lib/search'
@@ -21,14 +21,14 @@ export default function App() {
   const [fileName, setFileName] = useState<string>('')
   const [entries, setEntries] = useState<LogEntry[]>([])
   const [filters, setFilters] = useState<FiltersState>({
-    levels: new Set(['ERROR', 'WARN', 'INFO', 'DEBUG', 'TRACE']),
+    selectedLevel: null,
     query: '',
     useRegex: false,
     timeRange: null,
   })
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [theme, setTheme] = useState<'light' | 'dark'>('dark')
-  const [accent, setAccent] = useState('#30F24E')
+  const [accent, setAccent] = useState('#9CAF88')
   const [binMs, setBinMs] = useState<number>(60000)
   const [highlightEnabled, setHighlightEnabled] = useState<boolean>(true)
   const [cmdOpen, setCmdOpen] = useState(false)
@@ -61,12 +61,11 @@ export default function App() {
   const highlightRe = highlightEnabled ? compiledRe : null
 
   const filtered = useMemo(() => {
-    const activeLevels = filters.levels
     const re = highlightRe
     let q = filters.query.trim()
     if (q && !filters.useRegex) q = q.toLowerCase()
     return entries.filter(e => {
-      if (!activeLevels.has(e.level as any)) return false
+      if (filters.selectedLevel && e.level !== filters.selectedLevel) return false
       if (filters.timeRange && e.time) {
         const t = e.time.getTime()
         if (t < filters.timeRange.start.getTime() || t >= filters.timeRange.end.getTime()) return false
@@ -87,12 +86,8 @@ export default function App() {
 
   // Removed sample log loader
 
-  const toggleLevel = (lvl: any) => {
-    setFilters(f => {
-      const next = new Set(f.levels)
-      if (next.has(lvl)) next.delete(lvl); else next.add(lvl)
-      return { ...f, levels: next }
-    })
+  const selectLevel = (lvl: Exclude<LogLevel, 'UNKNOWN'> | null) => {
+    setFilters(f => ({ ...f, selectedLevel: lvl }))
   }
 
   useEffect(() => {
@@ -144,7 +139,7 @@ export default function App() {
 
   const runClearFilters = () => {
     setFilters({
-      levels: new Set(['ERROR', 'WARN', 'INFO', 'DEBUG', 'TRACE']),
+      selectedLevel: null,
       query: '',
       useRegex: false,
       timeRange: null,
@@ -208,7 +203,7 @@ export default function App() {
         </div>
 
         <div className="mb-3 flex flex-col md:flex-row gap-3 md:items-center md:justify-between">
-          <LevelFilters active={filters.levels} onToggle={toggleLevel} />
+          <LevelFilters selectedLevel={filters.selectedLevel} onSelect={selectLevel} />
           <div className="flex items-center gap-3">
             <PresetsDropdown onSelect={(pattern) => setFilters(f => ({ ...f, query: pattern, useRegex: true }))} />
             <SearchBar
@@ -244,6 +239,7 @@ export default function App() {
             setBinMs={setBinMs}
             onSelectRange={(r) => setFilters(f => ({ ...f, timeRange: r }))}
             activeRange={filters.timeRange ?? null}
+            height={560}
           />
         </div>
 

@@ -46,8 +46,8 @@ export default function VirtualTable({ rows, height: propHeight, highlightRe = n
   
   const currentPageData = getCurrentPageData()
   
-  // Always use user preference for rows, but respect minimum height
-  const height = Math.max(propHeight ?? 0, userRows * ROW_HEIGHT)
+  // Size container based on actual content, but respect user preference for minimum
+  const height = Math.max(currentPageData.length * ROW_HEIGHT, userRows * ROW_HEIGHT)
   const totalHeight = currentPageData.length * ROW_HEIGHT
 
   // Save user preference to localStorage
@@ -132,106 +132,110 @@ export default function VirtualTable({ rows, height: propHeight, highlightRe = n
                   title="Set number of visible rows"
                 />
               </div>
-                             <button
-                 className="px-2 py-1 border border-gray-300 dark:border-gray-600 rounded text-[11px] hover:bg-gray-50 dark:hover:bg-gray-600"
-                 onClick={() => setWrapLines(w => !w)}
-                 title={wrapLines ? 'Switch to single-line with horizontal scroll' : 'Wrap long lines'}
-               >
-                 {wrapLines ? 'Wrap: On' : 'Wrap: Off'}
-               </button>
-               {shouldPaginate && (
-                 <div className="flex items-center gap-2">
-                   <button
-                     className="px-2 py-1 border border-gray-300 dark:border-gray-600 rounded text-[11px] hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
-                     onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                     disabled={currentPage === 1}
-                     title="Previous page"
-                   >
-                     ←
-                   </button>
-                   <span className="text-[11px] text-gray-600 dark:text-gray-300">
-                     {currentPage} / {totalPages}
-                   </span>
-                   <button
-                     className="px-2 py-1 border border-gray-300 dark:border-gray-600 rounded text-[11px] hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
-                     onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                     disabled={currentPage === totalPages}
-                     title="Next page"
-                   >
-                     →
-                   </button>
+              <button
+                className="px-2 py-1 border border-gray-300 dark:border-gray-600 rounded text-[11px] hover:bg-gray-50 dark:hover:bg-gray-600"
+                onClick={() => setWrapLines(w => !w)}
+                title={wrapLines ? 'Switch to single-line with horizontal scroll' : 'Wrap long lines'}
+              >
+                {wrapLines ? 'Wrap: On' : 'Wrap: Off'}
+              </button>
+            </div>
+                    </div>
+          
+          {shouldPaginate && (
+            <div className="flex items-center justify-center gap-2 px-3 py-2 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700">
+              <button
+                className="px-2 py-1 border border-gray-300 dark:border-gray-600 rounded text-[11px] hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+                title="Previous page"
+              >
+                ←
+              </button>
+              <span className="text-[11px] text-gray-600 dark:text-gray-300">
+                {currentPage} / {totalPages}
+              </span>
+              <button
+                className="px-2 py-1 border border-gray-300 dark:border-gray-600 rounded text-[11px] hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                disabled={currentPage === totalPages}
+                title="Next page"
+              >
+                →
+              </button>
+            </div>
+          )}
+           
+           {rows.length === 0 ? (
+             <div className="text-sm text-gray-500 dark:text-gray-400 p-4 text-center">No log entries parsed yet.</div>
+           ) : (
+                           <div ref={containerRef} style={{ height: useVirtual ? height : 'auto' }} className="relative overflow-y-auto">
+                {useVirtual ? (
+                  <div style={{ height: totalHeight }}>
+                    <div style={{ transform: `translateY(${offsetY}px)` }}>
+                      {items.map((r) => (
+                       <div
+                         key={r.index}
+                         className={`grid ${gridCols} text-[12px] px-3 items-center border-b border-gray-50 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 ${selectedIndex === r.index ? 'bg-blue-50 dark:bg-blue-900/20' : ''}`}
+                         style={{ height: ROW_HEIGHT }}
+                         title={r.message}
+                         onClick={() => onSelectRow && onSelectRow(r.index)}
+                         role="row"
+                         aria-selected={selectedIndex === r.index}
+                       >
+                         <div className="text-center">
+                           <button
+                             className={`w-5 h-5 leading-5 text-center rounded ${bookmarked?.has(r.index) ? 'text-yellow-500' : 'text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300'}`}
+                             title={bookmarked?.has(r.index) ? 'Unbookmark' : 'Bookmark'}
+                             onClick={(e) => { e.stopPropagation(); onToggleBookmark && onToggleBookmark(r.index) }}
+                           >★</button>
+                         </div>
+                         <div className="tabular-nums text-gray-700 dark:text-gray-200" title={formatTime(r)}>{renderHighlight(formatTime(r), highlightRe)}</div>
+                         <div className="font-medium">
+                           <span className={levelColor(r.level)}>{renderHighlight(r.level, highlightRe)}</span>
+                         </div>
+                         <div className={msgCellClass} title={r.message}>{renderHighlight(r.message, highlightRe)}</div>
+                       </div>
+                     ))}
+                   </div>
+                 </div>
+               ) : (
+                 <div>
+                   {items.map((r) => (
+                     <div
+                       key={r.index}
+                       className={`grid ${gridCols} text-[12px] px-3 items-start border-b border-gray-50 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 ${selectedIndex === r.index ? 'bg-blue-50 dark:bg-blue-900/20' : ''}`}
+                       title={r.message}
+                       onClick={() => onSelectRow && onSelectRow(r.index)}
+                       role="row"
+                       aria-selected={selectedIndex === r.index}
+                     >
+                       <div className="text-center">
+                         <button
+                           className={`w-5 h-5 leading-5 text-center rounded ${bookmarked?.has(r.index) ? 'text-yellow-500' : 'text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300'}`}
+                           title={bookmarked?.has(r.index) ? 'Unbookmark' : 'Bookmark'}
+                           onClick={(e) => { e.stopPropagation(); onToggleBookmark && onToggleBookmark(r.index) }}
+                         >★</button>
+                       </div>
+                       <div className="tabular-nums text-gray-700 dark:text-gray-200" title={formatTime(r)}>{renderHighlight(formatTime(r), highlightRe)}</div>
+                       <div className="font-medium">
+                         <span className={levelColor(r.level)}>{renderHighlight(r.level, highlightRe)}</span>
+                       </div>
+                       <div className={msgCellClass} title={r.message}>{renderHighlight(r.message, highlightRe)}</div>
+                     </div>
+                   ))}
                  </div>
                )}
-            </div>
-          </div>
-          <div ref={containerRef} style={{ height }} className="relative overflow-y-auto">
-            {useVirtual ? (
-              <div style={{ height: totalHeight }}>
-                <div style={{ transform: `translateY(${offsetY}px)` }}>
-                  {items.map((r) => (
-                    <div
-                      key={r.index}
-                      className={`grid ${gridCols} text-[12px] px-3 items-center border-b border-gray-50 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 ${selectedIndex === r.index ? 'bg-blue-50 dark:bg-blue-900/20' : ''}`}
-                      style={{ height: ROW_HEIGHT }}
-                      title={r.message}
-                      onClick={() => onSelectRow && onSelectRow(r.index)}
-                      role="row"
-                      aria-selected={selectedIndex === r.index}
-                    >
-                      <div className="text-center">
-                        <button
-                          className={`w-5 h-5 leading-5 text-center rounded ${bookmarked?.has(r.index) ? 'text-yellow-500' : 'text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300'}`}
-                          title={bookmarked?.has(r.index) ? 'Unbookmark' : 'Bookmark'}
-                          onClick={(e) => { e.stopPropagation(); onToggleBookmark && onToggleBookmark(r.index) }}
-                        >★</button>
-                      </div>
-                      <div className="tabular-nums text-gray-700 dark:text-gray-200" title={formatTime(r)}>{renderHighlight(formatTime(r), highlightRe)}</div>
-                      <div className="font-medium">
-                        <span className={levelColor(r.level)}>{renderHighlight(r.level, highlightRe)}</span>
-                      </div>
-                      <div className={msgCellClass} title={r.message}>{renderHighlight(r.message, highlightRe)}</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ) : (
-              <div>
-                {items.map((r) => (
-                  <div
-                    key={r.index}
-                    className={`grid ${gridCols} text-[12px] px-3 items-start border-b border-gray-50 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 ${selectedIndex === r.index ? 'bg-blue-50 dark:bg-blue-900/20' : ''}`}
-                    title={r.message}
-                    onClick={() => onSelectRow && onSelectRow(r.index)}
-                    role="row"
-                    aria-selected={selectedIndex === r.index}
-                  >
-                    <div className="text-center">
-                      <button
-                        className={`w-5 h-5 leading-5 text-center rounded ${bookmarked?.has(r.index) ? 'text-yellow-500' : 'text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300'}`}
-                        title={bookmarked?.has(r.index) ? 'Unbookmark' : 'Bookmark'}
-                        onClick={(e) => { e.stopPropagation(); onToggleBookmark && onToggleBookmark(r.index) }}
-                      >★</button>
-                    </div>
-                    <div className="tabular-nums text-gray-700 dark:text-gray-200" title={formatTime(r)}>{renderHighlight(formatTime(r), highlightRe)}</div>
-                    <div className="font-medium">
-                      <span className={levelColor(r.level)}>{renderHighlight(r.level, highlightRe)}</span>
-                    </div>
-                    <div className={msgCellClass} title={r.message}>{renderHighlight(r.message, highlightRe)}</div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-             {rows.length === 0 && (
-         <div className="text-sm text-gray-500 dark:text-gray-400 p-4">No log entries parsed yet.</div>
-       )}
-       {shouldPaginate && rows.length > 0 && (
-         <div className="text-xs text-gray-500 dark:text-gray-400 px-3 py-2 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700">
-           Showing page {currentPage} of {totalPages} ({rows.length} total entries)
+             </div>
+           )}
          </div>
-       )}
+       </div>
+      
+      {shouldPaginate && rows.length > 0 && (
+        <div className="text-xs text-gray-500 dark:text-gray-400 px-3 py-2 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700">
+          Showing page {currentPage} of {totalPages} ({rows.length} total entries)
+        </div>
+      )}
     </div>
   )
 }

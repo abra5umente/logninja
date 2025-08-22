@@ -8,12 +8,34 @@ interface Props {
   setBinMs: (ms: number) => void
   onSelectRange: (range: { start: Date; end: Date } | null) => void
   activeRange?: { start: Date; end: Date } | null
+  virtualTableRows?: number
 }
 
 export default function TimelinePanel({ entries, binMs, setBinMs, onSelectRange, activeRange }: Props) {
   const bins = useMemo(() => groupByBinsMs(entries, binMs), [entries, binMs])
   const maxCount = useMemo(() => bins.reduce((m, b) => Math.max(m, b.count), 0), [bins])
   const [open, setOpen] = useState<Set<number>>(new Set())
+  const [currentPage, setCurrentPage] = useState(1)
+  
+  // Pagination logic
+  const pageSize = 25
+  const totalPages = Math.ceil(bins.length / pageSize)
+  const shouldPaginate = bins.length > 25
+  
+  // Get current page data
+  const getCurrentPageData = () => {
+    if (!shouldPaginate) return bins
+    const startIndex = (currentPage - 1) * pageSize
+    const endIndex = startIndex + pageSize
+    return bins.slice(startIndex, endIndex)
+  }
+  
+  const currentPageData = getCurrentPageData()
+  
+  // Reset to first page when bins change
+  React.useEffect(() => {
+    setCurrentPage(1)
+  }, [bins.length])
 
   const toggle = (i: number) => setOpen(prev => {
     const n = new Set(prev)
@@ -24,7 +46,7 @@ export default function TimelinePanel({ entries, binMs, setBinMs, onSelectRange,
   const formatRange = (b: ChunkBin) => `${fmtTime(b.start)} - ${fmtTime(b.end)}`
 
   return (
-    <aside className="w-full md:w-80 lg:w-96 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 flex flex-col">
+    <aside className="w-full md:w-80 lg:w-96 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 flex flex-col rounded-md">
       <div className="flex items-center justify-between bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-100 px-3 py-2 text-xs">
         <div className="text-sm font-semibold">Timeline</div>
         <div className="flex items-center gap-2">
@@ -54,36 +76,87 @@ export default function TimelinePanel({ entries, binMs, setBinMs, onSelectRange,
           <div className="text-xs text-gray-500 dark:text-gray-400">Click a bar to filter</div>
         )}
       </div>
+      
+      {shouldPaginate && (
+        <div className="flex items-center justify-center gap-2 px-3 py-2 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700">
+          <button
+            className="px-2 py-1 border border-gray-300 dark:border-gray-600 rounded text-[11px] hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
+            onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+            disabled={currentPage === 1}
+            title="Previous page"
+          >
+            ←
+          </button>
+          <span className="text-[11px] text-gray-600 dark:text-gray-300">
+            {currentPage} / {totalPages}
+          </span>
+          <button
+            className="px-2 py-1 border border-gray-300 dark:border-gray-600 rounded text-[11px] hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
+            onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+            disabled={currentPage === totalPages}
+            title="Next page"
+          >
+            →
+          </button>
+        </div>
+      )}
 
-      <div className="p-3">
-        <Histogram bins={bins} max={maxCount} onSelect={(b) => onSelectRange({ start: b.start, end: b.end })} />
+      <div className="p-3 flex-shrink-0">
+        <Histogram bins={currentPageData} max={maxCount} onSelect={(b) => onSelectRange({ start: b.start, end: b.end })} />
       </div>
 
-      <div className="px-3 pb-3 overflow-auto" style={{ maxHeight: 320 }}>
+      <div className="px-3 pb-3 overflow-auto flex-1 min-h-0">
         <div className="text-xs font-semibold text-gray-700 dark:text-gray-200 mb-1">Chunks</div>
         <div className="border border-gray-100 dark:border-gray-700 rounded">
-          {bins.map((b, i) => (
-            <div key={i}>
-              <button
-                onClick={() => toggle(i)}
-                className="w-full flex items-center justify-between text-left px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-700 border-b border-gray-50 dark:border-gray-700 last:border-b-0"
-                title="Toggle chunk details"
-              >
-                <div className="text-[12px] text-gray-800 dark:text-gray-200 truncate">{formatRange(b)}</div>
-                <div className="text-[12px] text-gray-600 dark:text-gray-400">{b.count}</div>
-              </button>
-              {open.has(i) && (
-                <div className="px-2 pb-2">
-                  <LevelBadges bin={b} />
-                  <button
-                    onClick={() => onSelectRange({ start: b.start, end: b.end })}
-                    className="mt-2 text-xs text-[var(--accent)] hover:underline"
-                  >Filter to this range</button>
-                </div>
-              )}
-            </div>
-          ))}
+          {currentPageData.map((b, i) => {
+            const globalIndex = shouldPaginate ? (currentPage - 1) * pageSize + i : i
+            return (
+              <div key={globalIndex}>
+                <button
+                  onClick={() => toggle(globalIndex)}
+                  className="w-full flex items-center justify-between text-left px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-700 border-b border-gray-50 dark:border-gray-700 last:border-b-0"
+                  title="Toggle chunk details"
+                >
+                  <div className="text-[12px] text-gray-800 dark:text-gray-200 truncate">{formatRange(b)}</div>
+                  <div className="text-[12px] text-gray-600 dark:text-gray-400">{b.count}</div>
+                </button>
+                {open.has(globalIndex) && (
+                  <div className="px-2 pb-2">
+                    <LevelBadges bin={b} />
+                    <button
+                      onClick={() => onSelectRange({ start: b.start, end: b.end })}
+                      className="mt-2 text-xs text-[var(--accent)] hover:underline"
+                    >Filter to this range</button>
+                  </div>
+                )}
+              </div>
+            )
+          })}
         </div>
+        
+        {shouldPaginate && (
+          <div className="mt-3 flex items-center justify-center gap-2">
+            <button
+              className="px-2 py-1 border border-gray-300 dark:border-gray-600 rounded text-[11px] hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
+              onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+              disabled={currentPage === 1}
+              title="Previous page"
+            >
+              ←
+            </button>
+            <span className="text-[11px] text-gray-600 dark:text-gray-300">
+              {currentPage} / {totalPages}
+            </span>
+            <button
+              className="px-2 py-1 border border-gray-300 dark:border-gray-600 rounded text-[11px] hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
+              onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+              disabled={currentPage === totalPages}
+              title="Next page"
+            >
+              →
+            </button>
+          </div>
+        )}
       </div>
     </aside>
   )
@@ -96,18 +169,20 @@ function Histogram({ bins, max, onSelect }: { bins: ChunkBin[]; max: number; onS
       {bins.map((b, i) => (
         <div key={i} className="flex items-center gap-2 group">
           <div className="w-24 text-[11px] text-gray-500 dark:text-gray-400 tabular-nums">{fmtTime(b.start)}</div>
-          <button
-            onClick={() => onSelect(b)}
-            className="h-4 rounded transition-colors"
-            style={{ 
-              width: `${scale(b.count)}%`,
-              backgroundColor: 'var(--accent)',
-              opacity: 0.2
-            }}
-            onMouseEnter={(e) => e.currentTarget.style.opacity = '0.3'}
-            onMouseLeave={(e) => e.currentTarget.style.opacity = '0.2'}
-            title={`${fmtTime(b.start)} • ${b.count} entries`}
-          />
+          <div className="flex-1 relative">
+            <button
+              onClick={() => onSelect(b)}
+              className="h-4 rounded transition-colors absolute left-0 top-0"
+              style={{ 
+                width: `${Math.min(scale(b.count), 100)}%`,
+                backgroundColor: 'var(--accent)',
+                opacity: 0.2
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.opacity = '0.3'}
+              onMouseLeave={(e) => e.currentTarget.style.opacity = '0.2'}
+              title={`${fmtTime(b.start)} • ${b.count} entries`}
+            />
+          </div>
           <div className="text-[11px] text-gray-600 dark:text-gray-400 w-6 text-right">{b.count}</div>
         </div>
       ))}

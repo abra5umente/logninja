@@ -10,11 +10,11 @@ interface SettingsSidebarProps {
 }
 
 const accentColors = [
-    { label: 'Green', value: '#30F24E' },
-    { label: 'Cyan', value: '#11D9D9' },
-    { label: 'Purple', value: '#7F11D9' },
-    { label: 'Pink', value: '#D911A7' },
-    { label: 'Orange', value: '#D96411' }
+    { label: 'Sage Green', value: '#9CAF88' },
+    { label: 'Teal', value: '#14B8A6' },
+    { label: 'Slate Blue', value: '#64748B' },
+    { label: 'Dusty Rose', value: '#E5B8B8' },
+    { label: 'Warm Amber', value: '#F59E0B' }
 ]
 
 export default function SettingsSidebar({
