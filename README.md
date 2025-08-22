@@ -1,24 +1,30 @@
 # LogNinja
-
-A fast, client‑side log viewer built with Vite + React + TypeScript. Drag and drop logs, filter by level/text/regex, browse a timeline, and export results. Designed to work entirely in the browser (no uploads).
-
-<img width="1698" height="879" alt="image" src="https://github.com/user-attachments/assets/2ef5668d-cac6-4a2e-878f-832a604d51d1" />  
+<img width="1723" height="895" alt="Untitled" src="https://github.com/user-attachments/assets/d29c693d-6035-4fbd-a5f9-b3d6ca9bbb4f" />  
+A fast, client‑side log viewer built with Vite + React + TypeScript. Drag and drop logs, filter by level/text/regex, browse a timeline, and export results. Designed to work entirely in the browser (no uploads).  
 
 ## Features
 - Drag & drop `.log/.txt/.csv` (UTF‑8/UTF‑16 BOM aware)
+- Basic log summary view on upload
 - Search: plain text or regex, with match highlighting
-- Level filters and time range filtering via timeline
-- Timeline bins: 1s, 5s, 15s, 30s, 1/5/15 minutes
+  - Search has both filter and highlight-only modes
+- Histogram with automatic chunking
+  - User-configurable chunk lengths
 - Horizontal scroll + Wrap toggle for long lines
 - Row selection + Ctrl/Cmd+C to copy the full raw line
 - Bookmarks: star lines and export them (CSV/Markdown includes “Bookmarked Lines”)
-- Airlock summary (auto when filename includes `airlock`; Windows + Linux agents):
+- Airlock summary (auto when filename includes `airlock`; Windows + Linux agents)
 
 ## Screenshots
-<img width="1695" height="898" alt="image" src="https://github.com/user-attachments/assets/ab110c01-878e-4db8-a450-300cdeba7b51" />  
-<img width="1697" height="899" alt="image" src="https://github.com/user-attachments/assets/d0c8dd56-3de6-4835-bb45-d1033aa24287" />  
-<img width="1697" height="896" alt="image" src="https://github.com/user-attachments/assets/cc4bce96-25e8-40da-9392-d7d345ee153d" />  
-
+Enhanced Airlock Digital log support:
+<img width="1722" height="898" alt="Untitled" src="https://github.com/user-attachments/assets/07732c55-1641-40c9-b96c-7559745a7d94" />  
+Log Summary view:
+<img width="1723" height="895" alt="Untitled" src="https://github.com/user-attachments/assets/d29c693d-6035-4fbd-a5f9-b3d6ca9bbb4f" />  
+Markdown Summary export view:
+<img width="1722" height="892" alt="Untitled" src="https://github.com/user-attachments/assets/ea9e6e09-a7a4-4ef9-9080-07ba479a41dc" />  
+Settings with light/dark mode themes and accent colour picker:
+<img width="1723" height="896" alt="Untitled" src="https://github.com/user-attachments/assets/57ec2c79-c6da-499e-b930-806a8770eaba" />  
+Highlight search mode:
+<img width="1723" height="899" alt="Untitled" src="https://github.com/user-attachments/assets/4b4c73d2-a22a-4311-94e7-e64f9f58b847" />  
 
 ## Supported Formats (non‑exhaustive)
 - ISO/RFC3339, `YYYY-MM-DD HH:mm:ss[.SSS|,SSS]`
