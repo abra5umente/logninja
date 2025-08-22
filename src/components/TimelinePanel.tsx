@@ -16,11 +16,15 @@ export default function TimelinePanel({ entries, binMs, setBinMs, onSelectRange,
   const maxCount = useMemo(() => bins.reduce((m, b) => Math.max(m, b.count), 0), [bins])
   const [open, setOpen] = useState<Set<number>>(new Set())
   const [currentPage, setCurrentPage] = useState(1)
+  const [userPageSize, setUserPageSize] = useState(() => {
+    const saved = localStorage.getItem('timelinePageSize')
+    return saved ? parseInt(saved, 10) : 25
+  })
   
   // Pagination logic
-  const pageSize = 25
+  const pageSize = userPageSize
   const totalPages = Math.ceil(bins.length / pageSize)
-  const shouldPaginate = bins.length > 25
+  const shouldPaginate = bins.length > 20
   
   // Get current page data
   const getCurrentPageData = () => {
@@ -32,10 +36,15 @@ export default function TimelinePanel({ entries, binMs, setBinMs, onSelectRange,
   
   const currentPageData = getCurrentPageData()
   
-  // Reset to first page when bins change
+  // Save user preference to localStorage
+  React.useEffect(() => {
+    localStorage.setItem('timelinePageSize', userPageSize.toString())
+  }, [userPageSize])
+
+  // Reset to first page when bins change or page size changes
   React.useEffect(() => {
     setCurrentPage(1)
-  }, [bins.length])
+  }, [bins.length, userPageSize])
 
   const toggle = (i: number) => setOpen(prev => {
     const n = new Set(prev)
@@ -65,6 +74,22 @@ export default function TimelinePanel({ entries, binMs, setBinMs, onSelectRange,
             <option value={900000}>15 min</option>
           </select>
         </div>
+        {shouldPaginate && (
+          <div className="flex items-center gap-2">
+            <label className="text-[11px]">Show</label>
+            <select
+              className="text-[11px] border border-gray-300 dark:border-gray-600 rounded px-2 py-1 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+              value={userPageSize}
+              onChange={(e) => setUserPageSize(parseInt(e.target.value, 10))}
+            >
+              <option value={10}>10</option>
+              <option value={25}>25</option>
+              <option value={50}>50</option>
+              <option value={100}>100</option>
+            </select>
+          </div>
+        )}
+
       </div>
       <div className="px-3 py-2 border-b border-gray-200 dark:border-gray-700">
         {activeRange ? (
@@ -106,7 +131,30 @@ export default function TimelinePanel({ entries, binMs, setBinMs, onSelectRange,
       </div>
 
       <div className="px-3 pb-3 overflow-auto flex-1 min-h-0">
-        <div className="text-xs font-semibold text-gray-700 dark:text-gray-200 mb-1">Chunks</div>
+        <div className="flex items-center justify-between mb-1">
+          <div className="text-xs font-semibold text-gray-700 dark:text-gray-200">Chunks</div>
+          {shouldPaginate && (
+            <select
+              className="text-[11px] border border-gray-300 dark:border-gray-600 rounded px-2 py-1 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 min-w-[120px]"
+              value=""
+              onChange={(e) => {
+                if (e.target.value) {
+                  const chunkIndex = parseInt(e.target.value, 10)
+                  const targetPage = Math.floor(chunkIndex / userPageSize) + 1
+                  setCurrentPage(targetPage)
+                  e.target.value = "" // Reset selection
+                }
+              }}
+            >
+              <option value="">Jump to chunk...</option>
+              {bins.map((bin, index) => (
+                <option key={index} value={index}>
+                  {fmtTime(bin.start)} - {fmtTime(bin.end)} ({bin.count})
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
         <div className="border border-gray-100 dark:border-gray-700 rounded">
           {currentPageData.map((b, i) => {
             const globalIndex = shouldPaginate ? (currentPage - 1) * pageSize + i : i
@@ -155,6 +203,11 @@ export default function TimelinePanel({ entries, binMs, setBinMs, onSelectRange,
             >
               →
             </button>
+          </div>
+        )}
+        {shouldPaginate && (
+          <div className="text-xs text-gray-500 dark:text-gray-400 text-center">
+            Showing {pageSize} chunks per page
           </div>
         )}
       </div>

@@ -32,9 +32,9 @@ export default function VirtualTable({ rows, height: propHeight, highlightRe = n
   const [currentPage, setCurrentPage] = useState(1)
   
   // Pagination logic
-  const pageSize = 100
+  const pageSize = userRows
   const totalPages = Math.ceil(rows.length / pageSize)
-  const shouldPaginate = rows.length > 100
+  const shouldPaginate = rows.length > userRows
   
   // Get current page data
   const getCurrentPageData = () => {
@@ -233,7 +233,7 @@ export default function VirtualTable({ rows, height: propHeight, highlightRe = n
       
       {shouldPaginate && rows.length > 0 && (
         <div className="text-xs text-gray-500 dark:text-gray-400 px-3 py-2 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700">
-          Showing page {currentPage} of {totalPages} ({rows.length} total entries)
+          Showing page {currentPage} of {totalPages} ({rows.length} total entries, {pageSize} per page)
         </div>
       )}
     </div>
