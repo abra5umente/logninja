@@ -269,7 +269,7 @@ function renderHighlight(text: string, re: RegExp | null) {
       const end = start + (m[0]?.length ?? 0)
       if (end === start) { r.lastIndex++; continue }
       if (start > lastIndex) parts.push(text.slice(lastIndex, start))
-      parts.push(<mark key={start} className="bg-yellow-200 text-gray-900 rounded px-0.5">{text.slice(start, end)}</mark>)
+      parts.push(<mark key={start} className="rounded px-0.5" style={{ backgroundColor: 'var(--accent)', color: 'white' }}>{text.slice(start, end)}</mark>)
       lastIndex = end
     }
     if (lastIndex < text.length) parts.push(text.slice(lastIndex))

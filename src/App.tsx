@@ -25,12 +25,12 @@ export default function App() {
     query: '',
     useRegex: false,
     timeRange: null,
+    highlightOnly: false,
   })
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [theme, setTheme] = useState<'light' | 'dark'>('dark')
   const [accent, setAccent] = useState('#9CAF88')
   const [binMs, setBinMs] = useState<number>(60000)
-  const [highlightEnabled, setHighlightEnabled] = useState<boolean>(true)
   const [cmdOpen, setCmdOpen] = useState(false)
   const searchInputRef = useRef<HTMLInputElement>(null)
   const [airlockSummary, setAirlockSummary] = useState<Record<(typeof AIRLOCK_FIELDS)[number], string> | null>(null)
@@ -58,12 +58,29 @@ export default function App() {
   }
 
   const { re: compiledRe } = useMemo(() => buildSearchRegex(filters.query, filters.useRegex), [filters.query, filters.useRegex])
-  const highlightRe = highlightEnabled ? compiledRe : null
+  const highlightRe = compiledRe
 
   const filtered = useMemo(() => {
     const re = highlightRe
     let q = filters.query.trim()
     if (q && !filters.useRegex) q = q.toLowerCase()
+    
+    // If highlightOnly is enabled, don't filter by search query
+    if (filters.highlightOnly) {
+      return entries.filter(e => {
+        if (filters.selectedLevel && e.level !== filters.selectedLevel) return false
+        if (filters.timeRange && e.time) {
+          const t = e.time.getTime()
+          if (t < filters.timeRange.start.getTime() || t >= filters.timeRange.end.getTime()) return false
+        } else if (filters.timeRange && !e.time) {
+          // exclude entries without timestamp when a time filter is active
+          return false
+        }
+        return true
+      })
+    }
+    
+    // Normal filtering mode
     return entries.filter(e => {
       if (filters.selectedLevel && e.level !== filters.selectedLevel) return false
       if (filters.timeRange && e.time) {
@@ -143,11 +160,12 @@ export default function App() {
       query: '',
       useRegex: false,
       timeRange: null,
+      highlightOnly: false,
     })
   }
 
   const commands: CommandItem[] = [
-    { id: 'toggle-highlight', label: highlightEnabled ? 'Disable Highlight' : 'Enable Highlight', run: () => setHighlightEnabled(h => !h) },
+    { id: 'toggle-highlight', label: filters.highlightOnly ? 'Disable Highlight Only' : 'Enable Highlight Only', run: () => setFilters(f => ({ ...f, highlightOnly: !f.highlightOnly })) },
     { id: 'clear-filters', label: 'Clear Filters', run: runClearFilters },
     { id: 'export-csv', label: 'Export CSV (filtered)', run: runDownloadCsv },
     { id: 'copy-csv', label: 'Copy CSV (filtered)', run: runCopyCsv },
@@ -211,6 +229,8 @@ export default function App() {
               setQuery={(q) => setFilters(f => ({ ...f, query: q }))}
               useRegex={filters.useRegex}
               setUseRegex={(b) => setFilters(f => ({ ...f, useRegex: b }))}
+              highlightOnly={filters.highlightOnly}
+              setHighlightOnly={(b) => setFilters(f => ({ ...f, highlightOnly: b }))}
               ref={searchInputRef}
             />
           </div>
@@ -239,7 +259,6 @@ export default function App() {
             setBinMs={setBinMs}
             onSelectRange={(r) => setFilters(f => ({ ...f, timeRange: r }))}
             activeRange={filters.timeRange ?? null}
-            height={560}
           />
         </div>
 

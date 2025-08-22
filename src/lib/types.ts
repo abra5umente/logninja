@@ -15,6 +15,7 @@ export interface FiltersState {
   query: string
   useRegex: boolean
   timeRange?: { start: Date; end: Date } | null
+  highlightOnly: boolean
 }
 
 export interface ChunkBin {
