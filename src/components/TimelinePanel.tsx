@@ -24,13 +24,13 @@ export default function TimelinePanel({ entries, binMs, setBinMs, onSelectRange,
   const formatRange = (b: ChunkBin) => `${fmtTime(b.start)} - ${fmtTime(b.end)}`
 
   return (
-    <aside className="w-full md:w-80 lg:w-96 border-l border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 flex flex-col">
-      <div className="p-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
-        <div className="text-sm font-semibold text-gray-800 dark:text-gray-100">Timeline</div>
+    <aside className="w-full md:w-80 lg:w-96 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 flex flex-col">
+      <div className="flex items-center justify-between bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-100 px-3 py-2 text-xs">
+        <div className="text-sm font-semibold">Timeline</div>
         <div className="flex items-center gap-2">
-          <label className="text-xs text-gray-600 dark:text-gray-400">Chunk by</label>
+          <label className="text-[11px]">Chunk by</label>
           <select
-            className="text-sm border border-gray-300 dark:border-gray-700 rounded px-2 py-1 bg-white dark:bg-gray-700"
+            className="text-[11px] border border-gray-300 dark:border-gray-600 rounded px-2 py-1 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
             value={binMs}
             onChange={(e) => setBinMs(parseInt(e.target.value, 10))}
           >
@@ -44,11 +44,11 @@ export default function TimelinePanel({ entries, binMs, setBinMs, onSelectRange,
           </select>
         </div>
       </div>
-      <div className="p-3 border-b border-gray-200 dark:border-gray-700">
+      <div className="px-3 py-2 border-b border-gray-200 dark:border-gray-700">
         {activeRange ? (
           <div className="flex items-center justify-between text-xs">
             <div className="text-gray-700 dark:text-gray-300">Filtered: {fmtTime(activeRange.start)} - {fmtTime(activeRange.end)}</div>
-            <button className="text-blue-600 hover:underline" onClick={() => onSelectRange(null)}>Clear</button>
+            <button className="text-[var(--accent)] hover:underline" onClick={() => onSelectRange(null)}>Clear</button>
           </div>
         ) : (
           <div className="text-xs text-gray-500 dark:text-gray-400">Click a bar to filter</div>
@@ -61,12 +61,12 @@ export default function TimelinePanel({ entries, binMs, setBinMs, onSelectRange,
 
       <div className="px-3 pb-3 overflow-auto" style={{ maxHeight: 320 }}>
         <div className="text-xs font-semibold text-gray-700 dark:text-gray-200 mb-1">Chunks</div>
-        <div className="divide-y divide-gray-100 dark:divide-gray-700 border border-gray-100 dark:border-gray-700 rounded">
+        <div className="border border-gray-100 dark:border-gray-700 rounded">
           {bins.map((b, i) => (
             <div key={i}>
               <button
                 onClick={() => toggle(i)}
-                className="w-full flex items-center justify-between text-left px-2 py-2 hover:bg-gray-50 dark:hover:bg-gray-700"
+                className="w-full flex items-center justify-between text-left px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-700 border-b border-gray-50 dark:border-gray-700 last:border-b-0"
                 title="Toggle chunk details"
               >
                 <div className="text-[12px] text-gray-800 dark:text-gray-200 truncate">{formatRange(b)}</div>
@@ -77,7 +77,7 @@ export default function TimelinePanel({ entries, binMs, setBinMs, onSelectRange,
                   <LevelBadges bin={b} />
                   <button
                     onClick={() => onSelectRange({ start: b.start, end: b.end })}
-                    className="mt-2 text-xs text-blue-600 hover:underline"
+                    className="mt-2 text-xs text-[var(--accent)] hover:underline"
                   >Filter to this range</button>
                 </div>
               )}
@@ -98,8 +98,14 @@ function Histogram({ bins, max, onSelect }: { bins: ChunkBin[]; max: number; onS
           <div className="w-24 text-[11px] text-gray-500 dark:text-gray-400 tabular-nums">{fmtTime(b.start)}</div>
           <button
             onClick={() => onSelect(b)}
-            className="h-4 bg-blue-200 hover:bg-blue-300 rounded transition-colors"
-            style={{ width: `${scale(b.count)}%` }}
+            className="h-4 rounded transition-colors"
+            style={{ 
+              width: `${scale(b.count)}%`,
+              backgroundColor: 'var(--accent)',
+              opacity: 0.2
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.opacity = '0.3'}
+            onMouseLeave={(e) => e.currentTarget.style.opacity = '0.2'}
             title={`${fmtTime(b.start)} • ${b.count} entries`}
           />
           <div className="text-[11px] text-gray-600 dark:text-gray-400 w-6 text-right">{b.count}</div>

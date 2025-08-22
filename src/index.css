@@ -4,13 +4,13 @@
 
 /* Base themes */
 html, body, #root { height: 100%; }
-body { @apply bg-gray-50 text-gray-900 dark:bg-gray-900 dark:text-gray-100; }
+body { @apply bg-gray-100 text-gray-900 dark:bg-gray-800 dark:text-gray-100; }
 
 /* Simple scrollbar tweaks */
 *::-webkit-scrollbar { height: 10px; width: 10px; }
 *::-webkit-scrollbar-thumb { background-color: rgba(125,125,125,0.35); border-radius: 6px; }
 
-/* Pizza mode easter egg */
+/* holy shit did someone say pizza? */
 body.pizza-mode::before {
     content: "";
     position: fixed;
@@ -21,7 +21,7 @@ body.pizza-mode::before {
     background-image: var(--pizza-url);
     background-size: 160px 160px;
     background-repeat: repeat;
-    opacity: 0.02;
+    opacity: 0.04;
     filter: grayscale(0.5);
     pointer-events: none;
     z-index: 0;
@@ -29,4 +29,72 @@ body.pizza-mode::before {
 
 .dark body.pizza-mode::before {
     opacity: 0.2;
+}
+
+::selection {
+    background-color: var(--accent);
+    opacity: 0.3;
+}
+
+::-moz-selection {
+    background-color: var(--accent);
+    opacity: 0.3;
+}
+
+/* Airlock Summary Component */
+.airlock-summary {
+    @apply border rounded-md overflow-hidden;
+    border-color: var(--accent);
+    background-color: #f1f5f9;
+}
+
+.dark .airlock-summary {
+    background-color: #1f2937;
+}
+
+.airlock-summary-header {
+    @apply px-3 py-2 flex items-center justify-between border-b;
+    border-bottom-color: var(--accent);
+}
+
+.airlock-summary-title {
+    @apply text-sm font-semibold;
+    color: var(--accent);
+}
+
+.airlock-summary-toggle {
+    @apply text-xs hover:underline;
+    color: var(--accent);
+}
+
+.airlock-summary-table {
+    @apply w-full text-sm;
+}
+
+.airlock-summary-thead {
+    @apply text-left font-bold;
+    color: var(--accent);
+}
+
+.airlock-summary-row {
+    @apply px-3 py-2;
+}
+
+.airlock-summary-key {
+    @apply px-3 py-2 align-top;
+    color: var(--accent);
+}
+
+.airlock-summary-value {
+    @apply px-3 py-2 whitespace-pre-wrap;
+    color: #374151;
+}
+
+.dark .airlock-summary-value {
+    color: #d1d5db;
+}
+
+.airlock-summary-clickable {
+    @apply underline decoration-dotted hover:decoration-solid text-left;
+    color: var(--accent);
 }

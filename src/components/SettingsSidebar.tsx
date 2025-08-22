@@ -37,7 +37,7 @@ export default function SettingsSidebar({
 
             {/* Sidebar */}
             <aside
-                className={`fixed right-0 top-0 z-50 h-full w-[320px] sm:w-[360px] bg-white dark:bg-gray-800 shadow-xl border-l border-gray-200 dark:border-gray-700 transform transition-transform duration-300 ${open ? 'translate-x-0' : 'translate-x-full'
+                className={`fixed right-0 top-0 z-50 h-full w-[320px] sm:w-[360px] bg-white dark:bg-gray-800 shadow-xl border-l border-gray-200 dark:border-gray-700 transform transition-transform duration-300 flex flex-col ${open ? 'translate-x-0' : 'translate-x-full'
                     }`}
                 role="dialog"
                 aria-modal="true"
@@ -46,9 +46,14 @@ export default function SettingsSidebar({
                 {/* Header */}
                 <div className="p-4 border-b border-gray-200 dark:border-gray-700">
                     <div className="flex items-center justify-between">
-                        <h2 className="text-lg font-semibold" style={{ color: 'var(--accent)' }}>
-                            Settings
-                        </h2>
+                        <div>
+                            <h2 className="text-lg font-semibold" style={{ color: 'var(--accent)' }}>
+                                Settings
+                            </h2>
+                            <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                                Client-side log viewer with search and filters
+                            </p>
+                        </div>
                         <button
                             className="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700"
                             onClick={onClose}
@@ -72,7 +77,7 @@ export default function SettingsSidebar({
                 </div>
 
                 {/* Content */}
-                <div className="p-4 space-y-6 overflow-y-auto h-[calc(100%-56px-56px)]">
+                <div className="p-4 space-y-6 overflow-y-auto flex-1">
                     {/* Appearance Section */}
                     <section>
                         <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">

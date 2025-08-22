@@ -8,18 +8,18 @@ export default function AirlockSummary({ data, collapsed, setCollapsed, onFilter
   onFilterText: (text: string, useRegex?: boolean) => void
 }) {
   return (
-    <div className="border border-blue-200 dark:border-blue-900/50 bg-blue-50 dark:bg-blue-900/20 rounded-md overflow-hidden">
-      <div className="px-3 py-2 flex items-center justify-between border-b border-blue-200/70 dark:border-blue-900/50">
-        <div className="text-sm font-semibold text-blue-800 dark:text-blue-200">Airlock Debug Summary</div>
-        <button className="text-xs text-blue-700 dark:text-blue-300 hover:underline" onClick={() => setCollapsed(!collapsed)}>
+    <div className="airlock-summary">
+      <div className="airlock-summary-header">
+        <div className="airlock-summary-title">Airlock Debug Summary</div>
+        <button className="airlock-summary-toggle" onClick={() => setCollapsed(!collapsed)}>
           {collapsed ? 'Expand' : 'Collapse'}
         </button>
       </div>
       {!collapsed && (
         <div className="overflow-auto">
-          <table className="w-full text-sm">
+          <table className="airlock-summary-table">
             <thead>
-              <tr className="text-left text-blue-900/80 dark:text-blue-200">
+              <tr className="airlock-summary-thead">
                 <th className="px-3 py-2 w-56">Key</th>
                 <th className="px-3 py-2">Value</th>
               </tr>
@@ -29,12 +29,12 @@ export default function AirlockSummary({ data, collapsed, setCollapsed, onFilter
                 const v = data[k]
                 const clickable = v && v !== '—'
                 return (
-                  <tr key={k} className="border-t border-blue-200/60 dark:border-blue-900/40">
-                    <td className="px-3 py-2 text-blue-900 dark:text-blue-100 align-top">{k}</td>
-                    <td className="px-3 py-2 text-gray-900 dark:text-gray-100 whitespace-pre-wrap">
+                  <tr key={k} className="airlock-summary-row">
+                    <td className="airlock-summary-key">{k}</td>
+                    <td className="airlock-summary-value">
                       {clickable ? (
                         <button
-                          className="underline decoration-dotted hover:decoration-solid text-left"
+                          className="airlock-summary-clickable"
                           onClick={() => {
                           const token = getAirlockFieldSearchString(k, data)
                           // Flip regex mode when token is clearly a regex or for known regex-only fields

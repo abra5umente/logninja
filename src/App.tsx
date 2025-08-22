@@ -165,18 +165,27 @@ export default function App() {
       <div className="relative z-10 max-w-[1400px] mx-auto p-4">
         <header className="mb-4 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
           <div>
-            <h1 className="text-2xl font-semibold text-gray-900 dark:text-gray-100">LogNinja</h1>
-            <p className="text-sm text-gray-600 dark:text-gray-400">Client-side log viewer with search and filters</p>
           </div>
           <div className="flex items-center gap-2">
             {fileName && <span className="text-xs text-gray-500">Loaded: {fileName}</span>}
             <button
               type="button"
-              className="ml-2 p-2 rounded border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800"
+              className="ml-2 p-2 rounded border border-gray-200 dark:border-gray-700 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 transition-colors"
+              style={{ '--tw-shadow-color': 'var(--accent)' } as React.CSSProperties}
+              onMouseEnter={(e) => {
+                const target = e.currentTarget;
+                const accentColor = getComputedStyle(document.documentElement).getPropertyValue('--accent');
+                target.style.backgroundColor = accentColor;
+                target.style.color = 'white';
+              }}
+              onMouseLeave={(e) => {
+                const target = e.currentTarget;
+                target.style.backgroundColor = '';
+                target.style.color = '';
+              }}
               onClick={() => setSettingsOpen(true)}
               aria-label="Open settings"
               title="Settings"
-              style={{ color: 'var(--accent)' }}
             >
               <svg
                 xmlns="http://www.w3.org/2000/svg"

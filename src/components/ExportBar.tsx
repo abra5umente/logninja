@@ -37,16 +37,51 @@ export default function ExportBar({ rows, filters, bookmarked }: Props) {
   return (
     <div className="flex flex-wrap gap-2 items-center">
       <button
-        className="px-3 py-2 text-sm border border-gray-300 dark:border-gray-700 rounded hover:bg-gray-50 dark:hover:bg-gray-700"
+        className="px-3 py-2 text-sm bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 rounded transition-colors"
+        style={{ '--tw-shadow-color': 'var(--accent)' } as React.CSSProperties}
+        onMouseEnter={(e) => {
+          const target = e.currentTarget;
+          const accentColor = getComputedStyle(document.documentElement).getPropertyValue('--accent');
+          target.style.backgroundColor = accentColor;
+          target.style.color = 'white';
+        }}
+        onMouseLeave={(e) => {
+          const target = e.currentTarget;
+          target.style.backgroundColor = '';
+          target.style.color = '';
+        }}
         onClick={() => download(csv, 'logs.csv', 'text/csv;charset=utf-8')}
       >Export CSV</button>
       <button
-        className="px-3 py-2 text-sm border border-gray-300 dark:border-gray-700 rounded hover:bg-gray-50 dark:hover:bg-gray-700"
+        className="px-3 py-2 text-sm bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 rounded transition-colors"
+        style={{ '--tw-shadow-color': 'var(--accent)' } as React.CSSProperties}
+        onMouseEnter={(e) => {
+          const target = e.currentTarget;
+          const accentColor = getComputedStyle(document.documentElement).getPropertyValue('--accent');
+          target.style.backgroundColor = accentColor;
+          target.style.color = 'white';
+        }}
+        onMouseLeave={(e) => {
+          const target = e.currentTarget;
+          target.style.backgroundColor = '';
+          target.style.color = '';
+        }}
         onClick={async () => { await copy(csv) }}
         title="Copy CSV to clipboard"
       >Copy CSV</button>
       <button
-        className="px-3 py-2 text-sm border border-gray-300 dark:border-gray-700 rounded hover:bg-gray-50 dark:hover:bg-gray-700"
+        className="px-3 py-2 text-sm bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 rounded transition-colors"
+        style={{ '--tw-shadow-color': 'var(--accent)' } as React.CSSProperties}
+        onMouseEnter={(e) => {
+          const target = e.currentTarget;
+          target.style.backgroundColor = getComputedStyle(document.documentElement).getPropertyValue('--accent');
+          target.style.color = 'white';
+        }}
+        onMouseLeave={(e) => {
+          const target = e.currentTarget;
+          target.style.backgroundColor = '';
+          target.style.color = '';
+        }}
         onClick={() => setMdOpen(true)}
       >Markdown Summary</button>
       {mdOpen && (
@@ -70,26 +105,65 @@ function MarkdownModal({ markdown, onClose, onCopy, onDownload }: {
   const [copied, setCopied] = useState(false)
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="bg-white rounded-md shadow-xl w-[min(90vw,900px)] max-h-[90vh] flex flex-col">
-        <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between">
-          <div className="font-semibold text-gray-800">Markdown Summary</div>
-          <button className="text-gray-500 dark:text-gray-300 hover:text-gray-700 dark:hover:text-gray-100" onClick={onClose}>Close</button>
+      <div className="bg-white dark:bg-gray-800 rounded-md shadow-xl w-[min(90vw,900px)] max-h-[90vh] flex flex-col">
+        <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+          <div className="font-semibold text-gray-800 dark:text-gray-100">Markdown Summary</div>
+          <button 
+            className="px-3 py-1.5 text-sm bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 rounded transition-colors hover:bg-[var(--accent)] hover:text-white"
+            style={{ '--tw-shadow-color': 'var(--accent)' } as React.CSSProperties}
+            onMouseEnter={(e) => {
+              const target = e.currentTarget;
+              const accentColor = getComputedStyle(document.documentElement).getPropertyValue('--accent');
+              target.style.backgroundColor = accentColor;
+              target.style.color = 'white';
+            }}
+            onMouseLeave={(e) => {
+              const target = e.currentTarget;
+              target.style.backgroundColor = '';
+              target.style.color = '';
+            }}
+            onClick={onClose}
+          >Close</button>
         </div>
         <div className="px-4 py-2 flex items-center gap-3">
           <div className="flex-1" />
           <button
-            className="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-700 rounded hover:bg-gray-50 dark:hover:bg-gray-700"
+            className="px-3 py-1.5 text-sm bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 rounded transition-colors"
+            style={{ '--tw-shadow-color': 'var(--accent)' } as React.CSSProperties}
+            onMouseEnter={(e) => {
+              const target = e.currentTarget;
+              const accentColor = getComputedStyle(document.documentElement).getPropertyValue('--accent');
+              target.style.backgroundColor = accentColor;
+              target.style.color = 'white';
+            }}
+            onMouseLeave={(e) => {
+              const target = e.currentTarget;
+              target.style.backgroundColor = '';
+              target.style.color = '';
+            }}
             onClick={async () => { const ok = await onCopy(markdown); setCopied(ok); setTimeout(() => setCopied(false), 1200) }}
           >{copied ? 'Copied!' : 'Copy to Clipboard'}</button>
           <button
-            className="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-700 rounded hover:bg-gray-50 dark:hover:bg-gray-700"
+            className="px-3 py-1.5 text-sm bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 rounded transition-colors"
+            style={{ '--tw-shadow-color': 'var(--accent)' } as React.CSSProperties}
+            onMouseEnter={(e) => {
+              const target = e.currentTarget;
+              const accentColor = getComputedStyle(document.documentElement).getPropertyValue('--accent');
+              target.style.backgroundColor = accentColor;
+              target.style.color = 'white';
+            }}
+            onMouseLeave={(e) => {
+              const target = e.currentTarget;
+              target.style.backgroundColor = '';
+              target.style.color = '';
+            }}
             onClick={onDownload}
           >Download .md</button>
         </div>
         <div className="px-4 pb-4">
           <textarea
             readOnly
-            className="w-full h-[60vh] font-mono text-sm p-3 border border-gray-200 dark:border-gray-700 rounded bg-gray-50 dark:bg-gray-900"
+            className="w-full h-[60vh] font-mono text-sm p-3 border border-gray-200 dark:border-gray-700 rounded bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100"
             value={markdown}
           />
         </div>
