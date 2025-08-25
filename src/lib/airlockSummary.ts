@@ -171,6 +171,9 @@ export function extractAirlockSummary(text: string): Record<(typeof AIRLOCK_FIEL
       case 'Publishers Loaded': {
         const count = lines.reduce((acc, l) => acc + (/\bLoading\s+Publisher:\s*/i.test(l) ? 1 : 0), 0)
         if (count > 0) return String(count)
+        // Non-debug Airlock: tab-separated INFO lines with Found Publisher
+        const nonDebugCount = lines.reduce((acc, l) => acc + (/^\s*\d{2}\/\d{2}\/\d{4}\s+\d{1,2}:\d{2}:\d{2}\s+(?:AM|PM)\s+INFO\s+\d+\s+Found\s+Publisher:\s*/i.test(l) ? 1 : 0), 0)
+        if (nonDebugCount > 0) return String(nonDebugCount)
         const m = findFirst(lines, [
           /publishers?\s*(?:loaded|count)[:=\s]+(\d+)/i,
         ])
@@ -186,6 +189,10 @@ export function extractAirlockSummary(text: string): Record<(typeof AIRLOCK_FIEL
           else if ((m = l.match(/Path\s*Exclusions?[:=\s]+(.+)/i))) {
             const tokens = m[1].split(/[;,]+/).map(s => s.trim()).filter(Boolean)
             count += tokens.length
+          }
+          // Non-debug Airlock: tab-separated INFO lines with Found Path
+          else if ((m = l.match(/^\s*\d{2}\/\d{2}\/\d{4}\s+\d{1,2}:\d{2}:\d{2}\s+(?:AM|PM)\s+INFO\s+\d+\s+Found\s+Path:\s*\((.+?)\)/))) {
+            count += 1
           }
         }
         return count > 0 ? String(count) : null
@@ -279,27 +286,35 @@ export function extractAirlockSummary(text: string): Record<(typeof AIRLOCK_FIEL
         const execLinuxFileCheckStartRe = /^\s*\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\s+FILE\s+CHECK\s+Filename=([^\s]+)/
         // Windows: SUCCESS lines
         const execWinRe = /Responding\s+to\s+Kernel\s*~\s*Filename:\s*([^~\r\n]+)\s*~\s*SUCCESS/i
-        let linStart = 0, win = 0
+        // Non-debug Airlock: tab-separated FILE CHECK lines with timestamp
+        const execNonDebugRe = /^\s*\d{2}\/\d{2}\/\d{4}\s+\d{1,2}:\d{2}:\d{2}\s+(?:AM|PM)\s+FILE\s+CHECK\s+\d+\s+Filename:\s*([^,\r\n]+)/
+        let linStart = 0, win = 0, nonDebug = 0
         for (const l of lines) {
           if (execLinuxFileCheckStartRe.test(l)) linStart += 1
           if (execWinRe.test(l)) win += 1
+          if (execNonDebugRe.test(l)) nonDebug += 1
         }
-        const total = linStart > 0 ? linStart : (win > 0 ? win : 0)
+        const total = linStart > 0 ? linStart : (win > 0 ? win : (nonDebug > 0 ? nonDebug : 0))
         return total > 0 ? String(total) : null
       }
       case 'Top Executed File': {
         const execLinuxFileCheckStartRe = /^\s*\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\s+FILE\s+CHECK\s+Filename=([^\s]+)/
         const execWinRe = /Responding\s+to\s+Kernel\s*~\s*Filename:\s*([^~\r\n]+)\s*~\s*SUCCESS/i
+        // Non-debug Airlock: tab-separated FILE CHECK lines with timestamp
+        const execNonDebugRe = /^\s*\d{2}\/\d{2}\/\d{4}\s+\d{1,2}:\d{2}:\d{2}\s+(?:AM|PM)\s+FILE\s+CHECK\s+\d+\s+Filename:\s*([^,\r\n]+)/
         const countsLinStart: Record<string, number> = {}
         const countsWin: Record<string, number> = {}
-        let linStart = 0, win = 0
+        const countsNonDebug: Record<string, number> = {}
+        let linStart = 0, win = 0, nonDebug = 0
         for (const l of lines) {
           const mLS = l.match(execLinuxFileCheckStartRe)
           if (mLS) { linStart += 1; const key = mLS[1].trim(); countsLinStart[key] = (countsLinStart[key] ?? 0) + 1 }
           const mW = l.match(execWinRe)
           if (mW) { win += 1; const key = mW[1].trim(); countsWin[key] = (countsWin[key] ?? 0) + 1 }
+          const mND = l.match(execNonDebugRe)
+          if (mND) { nonDebug += 1; const key = mND[1].trim(); countsNonDebug[key] = (countsNonDebug[key] ?? 0) + 1 }
         }
-        const pick = linStart > 0 ? countsLinStart : (win > 0 ? countsWin : {})
+        const pick = linStart > 0 ? countsLinStart : (win > 0 ? countsWin : (nonDebug > 0 ? countsNonDebug : {}))
         let top: string | null = null
         let max = 0
         for (const k in pick) {
@@ -368,9 +383,9 @@ export function buildAirlockFieldRegex(
     case 'File Extensions Added':
       return '(?i)Adding\s+File\s+Extension'
     case 'Publishers Loaded':
-      return '(?i)Loading\s+Publisher'
+      return '(?i)(Loading\s+Publisher|Found\s+Publisher:)'
     case 'Path Exclusions':
-      return '(?i)Loading\s+Path\s+Exclusion'
+      return '(?i)(Loading\s+Path\s+Exclusion|Found\s+Path:)'
     case 'Assembly Reflection Enabled':
       return '(?i)Assembly\s+Reflection'
     case 'Self Service Enabled':
@@ -386,7 +401,11 @@ export function buildAirlockFieldRegex(
         if (top && top !== '—') {
           const fileOnly = top.replace(/\s*\(\d+\)\s*$/, '')
           if (fileOnly.startsWith('/')) return '(?i)^\\s*\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}\\s+[^\\r\\n]*?FILE\\s+CHECK\\s+Filename='
-          if (/^[A-Za-z]:\\|^\\\\/.test(fileOnly)) return '(?i)Responding\\s+to\\s+Kernel\\s*~\\s*Filename:.*~\\s*SUCCESS'
+          if (/^[A-Za-z]:\\|^\\\\/.test(fileOnly)) {
+            // Check if it's the non-debug format by looking for the pattern in the data
+            // For now, return the Windows SUCCESS pattern as fallback
+            return '(?i)Responding\\s+to\\s+Kernel\\s*~\\s*Filename:.*~\\s*SUCCESS'
+          }
         }
       }
       // Fallback to Linux pattern
@@ -406,6 +425,11 @@ export function buildAirlockFieldRegex(
       }
       const fileOnly = v.replace(/\s*\(\d+\)\s*$/, '')
       if (fileOnly.startsWith('/')) return `(?i)^\\s*\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}\\s+[^\\r\\n]*?FILE\\s+CHECK\\s+Filename=${escapeRegex(fileOnly)}`
+      // Handle both Windows SUCCESS format and non-debug FILE CHECK format
+      if (/^[A-Za-z]:\\|^\\\\/.test(fileOnly)) {
+        // Try to match the non-debug format first, fallback to Windows SUCCESS
+        return `(?i)(^\\s*\\d{2}/\\d{2}/\\d{4}\\s+\\d{1,2}:\\d{2}:\\d{2}\\s+(?:AM|PM)\\s+FILE\\s+CHECK\\s+\\d+\\s+Filename:\\s*${escapeRegex(fileOnly)}|Responding\\s+to\\s+Kernel\\s*~\\s*Filename:\\s*${escapeRegex(fileOnly)}\\s*~\\s*SUCCESS)`
+      }
       return `(?i)Responding\\s+to\\s+Kernel\\s*~\\s*Filename:\\s*${escapeRegex(fileOnly)}\\s*~\\s*SUCCESS`
     }
     default:
@@ -453,9 +477,9 @@ export function getAirlockFieldSearchString(key: (typeof AIRLOCK_FIELDS)[number]
     case 'File Extensions Added':
       return 'Adding File Extension:'
     case 'Publishers Loaded':
-      return 'Loading Publisher:'
+      return '(?i)(Loading\\s+Publisher:|Found\\s+Publisher:)'
     case 'Path Exclusions':
-      return 'Loading Path Exclusion'
+      return '(?i)(Loading\\s+Path\\s+Exclusion|Found\\s+Path:)'
     case 'Assembly Reflection Enabled':
       return 'Assembly Reflection'
     case 'Self Service Enabled':
@@ -504,7 +528,10 @@ export function getAirlockFieldSearchString(key: (typeof AIRLOCK_FIELDS)[number]
         if (top && top !== '—') {
           const fileOnly = top.replace(/\s*\(\d+\)\s*$/, '')
           if (fileOnly.startsWith('/')) return '(?i)FILE\\s+CHECK\\s+Filename='
-          if (/^[A-Za-z]:\\|^\\\\/.test(fileOnly)) return '(?i)Responding\\s+to\\s+Kernel\\s*~\\s*Filename:.*~\\s*SUCCESS'
+          if (/^[A-Za-z]:\\|^\\\\/.test(fileOnly)) {
+            // Handle both Windows SUCCESS format and non-debug FILE CHECK format
+            return '(?i)(FILE\\s+CHECK\\s+\\d+\\s+Filename:|Responding\\s+to\\s+Kernel\\s*~\\s*Filename:.*~\\s*SUCCESS)'
+          }
         }
       }
       return '(?i)FILE\\s+CHECK\\s+Filename='
@@ -517,13 +544,20 @@ export function getAirlockFieldSearchString(key: (typeof AIRLOCK_FIELDS)[number]
           if (top && top !== '—') {
             const fileOnly = top.replace(/\s*\(\d+\)\s*$/, '')
             if (fileOnly.startsWith('/')) return '(?i)FILE\\s+CHECK\\s+Filename='
-            if (/^[A-Za-z]:\\|^\\\\/.test(fileOnly)) return '(?i)Responding\\s+to\\s+Kernel\\s*~\\s*Filename:.*~\\s*SUCCESS'
+            if (/^[A-Za-z]:\\|^\\\\/.test(fileOnly)) {
+              // Handle both Windows SUCCESS format and non-debug FILE CHECK format
+              return '(?i)(FILE\\s+CHECK\\s+\\d+\\s+Filename:|Responding\\s+to\\s+Kernel\\s*~\\s*Filename:.*~\\s*SUCCESS)'
+            }
           }
         }
         return '(?i)FILE\\s+CHECK\\s+Filename='
       }
       const fileOnly = v.replace(/\s*\(\d+\)\s*$/, '')
       if (fileOnly.startsWith('/')) return `(?i)FILE\\s+CHECK\\s+Filename=${escapeRegex(fileOnly)}`
+      // Handle both Windows SUCCESS format and non-debug FILE CHECK format
+      if (/^[A-Za-z]:\\|^\\\\/.test(fileOnly)) {
+        return `(?i)(FILE\\s+CHECK\\s+\\d+\\s+Filename:\\s*${escapeRegex(fileOnly)}|Responding\\s+to\\s+Kernel\\s*~\\s*Filename:\\s*${escapeRegex(fileOnly)}\\s*~\\s*SUCCESS)`
+      }
       return `(?i)Responding\\s+to\\s+Kernel\\s*~\\s*Filename:\\s*${escapeRegex(fileOnly)}\\s*~\\s*SUCCESS`
     }
     default:
