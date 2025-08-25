@@ -232,8 +232,29 @@ export default function VirtualTable({ rows, height: propHeight, highlightRe = n
        </div>
       
       {shouldPaginate && rows.length > 0 && (
-        <div className="text-xs text-gray-500 dark:text-gray-400 px-3 py-2 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700">
-          Showing page {currentPage} of {totalPages} ({rows.length} total entries, {pageSize} per page)
+        <div className="flex items-center justify-center gap-2 px-3 py-2 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700">
+          <button
+            className="px-2 py-1 border border-gray-300 dark:border-gray-600 rounded text-[11px] hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
+            onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+            disabled={currentPage === 1}
+            title="Previous page"
+          >
+            ←
+          </button>
+          <span className="text-[11px] text-gray-600 dark:text-gray-300">
+            {currentPage} / {totalPages}
+          </span>
+          <button
+            className="px-2 py-1 border border-gray-300 dark:border-gray-600 rounded text-[11px] hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
+            onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+            disabled={currentPage === totalPages}
+            title="Next page"
+          >
+            →
+          </button>
+          <div className="text-xs text-gray-500 dark:text-gray-400 ml-4">
+            Showing page {currentPage} of {totalPages} ({rows.length} total entries, {pageSize} per page)
+          </div>
         </div>
       )}
     </div>
