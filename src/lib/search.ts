@@ -5,11 +5,30 @@ export function escapeRegExp(s: string) {
 export function buildSearchRegex(query: string, useRegex: boolean): { re: RegExp | null } {
   const q = query.trim()
   if (!q) return { re: null }
+  
+  // Prevent extremely long patterns that could cause performance issues
+  if (q.length > 1000) return { re: null }
+  
   if (useRegex) {
     // Support PCRE-style (?i) for case-insensitive by removing it and adding 'i' flag.
     let pattern = q.replace(/\(\?i\)/gi, '')
+    
+    // Prevent patterns that could cause catastrophic backtracking
+    if (pattern.includes('.*.*') || pattern.includes('++') || pattern.includes('**')) {
+      return { re: null }
+    }
+    
     try {
-      return { re: new RegExp(pattern, 'gi') }
+      const regex = new RegExp(pattern, 'gi')
+      
+      // Test the regex on a small sample to detect potential issues
+      try {
+        regex.test('test')
+      } catch {
+        return { re: null }
+      }
+      
+      return { re: regex }
     } catch {
       return { re: null }
     }

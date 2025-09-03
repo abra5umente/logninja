@@ -80,6 +80,9 @@ export default function VirtualTable({ rows, height: propHeight, highlightRe = n
   const offsetY = useVirtual ? start * ROW_HEIGHT : 0
   const gridCols = wrapLines ? 'grid-cols-[24px_200px_90px_1fr]' : 'grid-cols-[24px_200px_90px_max-content]'
   const msgCellClass = wrapLines ? 'text-gray-900 dark:text-gray-100 whitespace-pre-wrap break-words' : 'text-gray-900 dark:text-gray-100 whitespace-nowrap'
+  
+  // Limit highlighting for performance with very large datasets
+  const shouldHighlight = items.length <= 1000
 
   // Copy selected row on Ctrl/Cmd + C
   useEffect(() => {
@@ -190,11 +193,11 @@ export default function VirtualTable({ rows, height: propHeight, highlightRe = n
                              onClick={(e) => { e.stopPropagation(); onToggleBookmark && onToggleBookmark(r.index) }}
                            >★</button>
                          </div>
-                         <div className="tabular-nums text-gray-700 dark:text-gray-200" title={formatTime(r)}>{renderHighlight(formatTime(r), highlightRe)}</div>
+                         <div className="tabular-nums text-gray-700 dark:text-gray-200" title={formatTime(r)}>{shouldHighlight ? renderHighlight(formatTime(r), highlightRe) : formatTime(r)}</div>
                          <div className="font-medium">
-                           <span className={levelColor(r.level)}>{renderHighlight(r.level, highlightRe)}</span>
+                           <span className={levelColor(r.level)}>{shouldHighlight ? renderHighlight(r.level, highlightRe) : r.level}</span>
                          </div>
-                         <div className={msgCellClass} title={r.message}>{renderHighlight(r.message, highlightRe)}</div>
+                         <div className={msgCellClass} title={r.message}>{shouldHighlight ? renderHighlight(r.message, highlightRe) : r.message}</div>
                        </div>
                      ))}
                    </div>
@@ -217,11 +220,11 @@ export default function VirtualTable({ rows, height: propHeight, highlightRe = n
                            onClick={(e) => { e.stopPropagation(); onToggleBookmark && onToggleBookmark(r.index) }}
                          >★</button>
                        </div>
-                       <div className="tabular-nums text-gray-700 dark:text-gray-200" title={formatTime(r)}>{renderHighlight(formatTime(r), highlightRe)}</div>
+                       <div className="tabular-nums text-gray-700 dark:text-gray-200" title={formatTime(r)}>{shouldHighlight ? renderHighlight(formatTime(r), highlightRe) : formatTime(r)}</div>
                        <div className="font-medium">
-                         <span className={levelColor(r.level)}>{renderHighlight(r.level, highlightRe)}</span>
+                         <span className={levelColor(r.level)}>{shouldHighlight ? renderHighlight(r.level, highlightRe) : r.level}</span>
                        </div>
-                       <div className={msgCellClass} title={r.message}>{renderHighlight(r.message, highlightRe)}</div>
+                       <div className={msgCellClass} title={r.message}>{shouldHighlight ? renderHighlight(r.message, highlightRe) : r.message}</div>
                      </div>
                    ))}
                  </div>
@@ -285,14 +288,30 @@ function renderHighlight(text: string, re: RegExp | null) {
     let lastIndex = 0
     let m: RegExpExecArray | null
     const r = new RegExp(re.source, re.flags.includes('g') ? re.flags : re.flags + 'g')
-    while ((m = r.exec(text)) !== null) {
+    let iterations = 0
+    const maxIterations = 1000 // Safety limit to prevent infinite loops
+    
+    while ((m = r.exec(text)) !== null && iterations < maxIterations) {
+      iterations++
       const start = m.index
       const end = start + (m[0]?.length ?? 0)
-      if (end === start) { r.lastIndex++; continue }
+      
+      // Prevent infinite loop on zero-width matches
+      if (end === start) { 
+        r.lastIndex++
+        continue 
+      }
+      
+      // Prevent infinite loop when lastIndex doesn't advance
+      if (r.lastIndex <= start) {
+        r.lastIndex = start + 1
+      }
+      
       if (start > lastIndex) parts.push(text.slice(lastIndex, start))
       parts.push(<mark key={start} className="rounded px-0.5" style={{ backgroundColor: 'var(--accent)', color: 'white' }}>{text.slice(start, end)}</mark>)
       lastIndex = end
     }
+    
     if (lastIndex < text.length) parts.push(text.slice(lastIndex))
     return <>{parts}</>
   } catch {

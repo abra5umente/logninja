@@ -10,17 +10,33 @@ interface Props {
 export default function LogSummary({ entries, fileName, loadTime }: Props) {
   if (entries.length === 0) return null
 
+  // Performance optimization: limit processing for extremely large datasets
+  const maxEntriesForSummary = 1000000 // 1 million entries max
+  const entriesToProcess = entries.length > maxEntriesForSummary ? entries.slice(0, maxEntriesForSummary) : entries
+
   // Calculate level counts
-  const levelCounts = entries.reduce((acc, entry) => {
+  const levelCounts = entriesToProcess.reduce((acc, entry) => {
     acc[entry.level] = (acc[entry.level] || 0) + 1
     return acc
   }, {} as Record<LogLevel, number>)
 
-  // Calculate time range
-  const timestamps = entries.filter(e => e.time).map(e => e.time!.getTime())
-  const timeRange = timestamps.length > 0 ? {
-    start: new Date(Math.min(...timestamps)),
-    end: new Date(Math.max(...timestamps))
+  // Calculate time range efficiently for large datasets
+  let minTime = Infinity
+  let maxTime = -Infinity
+  let hasTimestamps = false
+  
+  for (const entry of entriesToProcess) {
+    if (entry.time) {
+      const time = entry.time.getTime()
+      minTime = Math.min(minTime, time)
+      maxTime = Math.max(maxTime, time)
+      hasTimestamps = true
+    }
+  }
+  
+  const timeRange = hasTimestamps ? {
+    start: new Date(minTime),
+    end: new Date(maxTime)
   } : null
 
   // Format time range
@@ -65,7 +81,14 @@ export default function LogSummary({ entries, fileName, loadTime }: Props) {
           <tbody>
             <tr className="border-b border-gray-100 dark:border-gray-700">
               <td className="px-3 py-2 text-gray-600 dark:text-gray-400">Total Lines</td>
-              <td className="px-3 py-2 font-mono">{entries.length.toLocaleString()}</td>
+              <td className="px-3 py-2 font-mono">
+                {entries.length.toLocaleString()}
+                {entries.length > maxEntriesForSummary && (
+                  <span className="text-amber-600 dark:text-amber-400 ml-2">
+                    (summary based on first {maxEntriesForSummary.toLocaleString()})
+                  </span>
+                )}
+              </td>
             </tr>
             {timeRange && (
               <>

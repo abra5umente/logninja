@@ -148,6 +148,10 @@ export function parseLog(text: string): LogEntry[] {
   const out: LogEntry[] = []
   let lastEntry: LogEntry | null = null
   let index = 0
+  
+  // Performance optimization: limit processing for extremely large files
+  const maxLines = 1000000 // 1 million lines max
+  const linesToProcess = lines.length > maxLines ? lines.slice(0, maxLines) : lines
   // Pre-scan to capture a base date (Y-M-D) for logs that only provide time-of-day (e.g., MSI)
   let baseYMD: { y: number; m: number; d: number } | null = null
   for (const raw of lines) {
@@ -192,7 +196,7 @@ export function parseLog(text: string): LogEntry[] {
   // or MSI (s) (...) [2025-08-13 12:16:41:491]: message
   const reMSI = /^MSI\s+\(([a-z])\)\s+\(([0-9A-Fa-f:]+)\)\s+\[([^\]]+)\]:\s*(.*)$/i
 
-  for (const rawLine of lines) {
+  for (const rawLine of linesToProcess) {
     const line = rawLine.trimEnd()
     if (!line) continue
 
@@ -327,5 +331,19 @@ export function parseLog(text: string): LogEntry[] {
     out.push(entry)
     lastEntry = entry
   }
+  
+  // Add warning entry if file was truncated
+  if (lines.length > maxLines) {
+    out.push({
+      index: index++,
+      time: null,
+      timeStr: '',
+      level: 'WARN',
+      source: 'LogNinja',
+      message: `File truncated: showing first ${maxLines.toLocaleString()} lines of ${lines.length.toLocaleString()} total lines`,
+      raw: `[WARN] File truncated: showing first ${maxLines.toLocaleString()} lines of ${lines.length.toLocaleString()} total lines`
+    })
+  }
+  
   return out
 }
