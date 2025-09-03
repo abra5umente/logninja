@@ -1,5 +1,5 @@
 import React from 'react'
-import { AIRLOCK_FIELDS } from '../lib/airlockSummary'
+import { AIRLOCK_FIELDS, getAirlockFieldSearchString } from '../lib/airlockSummary'
 
 export default function AirlockSummary({ data, collapsed, setCollapsed, onFilterText }: {
   data: Record<(typeof AIRLOCK_FIELDS)[number], string>
@@ -62,4 +62,4 @@ export default function AirlockSummary({ data, collapsed, setCollapsed, onFilter
   )
 }
 
-import { getAirlockFieldSearchString } from '../lib/airlockSummary'
+

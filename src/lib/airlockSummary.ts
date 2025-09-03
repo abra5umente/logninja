@@ -6,6 +6,7 @@ export const AIRLOCK_FIELDS = [
   'Proxy Configured',
   'Primary Airlock Server',
   'Interops Found',
+  'Interop Paths',
   'Policy DB Loaded',
   'Policy DB Version',
   'Audit Mode',
@@ -104,6 +105,11 @@ export function extractAirlockSummary(text: string): Record<(typeof AIRLOCK_FIEL
         const found = lines.find(l => /Interop\s+Detection:\s*found/i.test(l))
         if (found) return '1'
         return null
+      }
+      case 'Interop Paths': {
+        // Count lines containing "Loading Interop Trusted Path:"
+        const count = lines.reduce((acc, l) => acc + (/Loading\s+Interop\s+Trusted\s+Path:/i.test(l) ? 1 : 0), 0)
+        return count > 0 ? String(count) : null
       }
       case 'Policy DB Loaded': {
         // Consider DB opened as loaded
@@ -370,6 +376,8 @@ export function buildAirlockFieldRegex(
     }
     case 'Interops Found':
       return '(?i)Interop\s+PID|Interop\s+Detection'
+    case 'Interop Paths':
+      return '(?i)Loading\s+Interop\s+Trusted\s+Path:'
     case 'Policy DB Loaded':
       return '(?i)Opening\s+Policy\s+database|loaded\s+policy\s+(database|db)|Init\\s+Policy:'
     case 'Policy DB Version':
@@ -452,6 +460,8 @@ export function getAirlockFieldSearchString(key: (typeof AIRLOCK_FIELDS)[number]
       return 'Primary Airlock Server'
     case 'Interops Found':
       return 'Interop PID'
+    case 'Interop Paths':
+      return 'Loading Interop Trusted Path:'
     case 'Policy DB Loaded': {
       // Prefer OS-specific token: Linux => 'Init Policy:', Windows => 'Opening Policy database'
       // Heuristic: infer OS from the top executed file path style if available
