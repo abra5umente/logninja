@@ -7,6 +7,7 @@ interface Props {
 export default function FileDropZone({ onText }: Props) {
   const [isDragging, setIsDragging] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [isLoading, setIsLoading] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
   const accept = '.log,.txt,.csv'
@@ -40,8 +41,16 @@ export default function FileDropZone({ onText }: Props) {
     e.stopPropagation()
     setIsDragging(false)
     setError(null)
+    setIsLoading(true)
+
     const files = Array.from(e.dataTransfer.files)
-    if (files.length === 0) return
+    if (files.length === 0) {
+      setIsLoading(false)
+      return
+    }
+
+    // Accumulate errors instead of overwriting
+    const errors: string[] = []
 
     // Process each file
     for (const f of files) {
@@ -49,7 +58,7 @@ export default function FileDropZone({ onText }: Props) {
         // fallback check by extension
         const ok = /(\.log|\.txt|\.csv)$/i.test(f.name)
         if (!ok) {
-          setError(`Skipped ${f.name}: only .log, .txt, .csv files are supported`)
+          errors.push(`${f.name} (unsupported format)`)
           continue
         }
       }
@@ -57,15 +66,26 @@ export default function FileDropZone({ onText }: Props) {
         const text = await decodeFile(f)
         onText(text, f.name)
       } catch (err) {
-        setError(`Failed to read ${f.name}`)
+        errors.push(`${f.name} (read failed)`)
       }
     }
-  }, [onText])
+
+    if (errors.length > 0) {
+      setError(`Skipped ${errors.length} file${errors.length > 1 ? 's' : ''}: ${errors.join(', ')}`)
+    }
+
+    setIsLoading(false)
+  }, [onText, accept])
 
   const onBrowse = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files
     if (!files || files.length === 0) return
+
     setError(null)
+    setIsLoading(true)
+
+    // Accumulate errors instead of overwriting
+    const errors: string[] = []
 
     // Process each file
     for (let i = 0; i < files.length; i++) {
@@ -74,10 +94,16 @@ export default function FileDropZone({ onText }: Props) {
         const text = await decodeFile(f)
         onText(text, f.name)
       } catch {
-        setError(`Failed to read ${f.name}`)
+        errors.push(`${f.name} (read failed)`)
       }
     }
+
+    if (errors.length > 0) {
+      setError(`Failed to read ${errors.length} file${errors.length > 1 ? 's' : ''}: ${errors.join(', ')}`)
+    }
+
     e.target.value = ''
+    setIsLoading(false)
   }, [onText])
 
   return (
@@ -89,19 +115,30 @@ export default function FileDropZone({ onText }: Props) {
     >
       <div className="flex items-center gap-3">
         <div className="text-gray-600 dark:text-gray-300">
-          <div className="font-medium">Drag & drop log files (multiple supported)</div>
+          <div className="font-medium">
+            {isLoading ? 'Loading files...' : 'Drag & drop log files (multiple supported)'}
+          </div>
           <div className="text-xs text-gray-500 dark:text-gray-400">Accepted: .log, .txt, .csv</div>
           {error && <div className="text-xs text-red-600 dark:text-red-400 mt-1">{error}</div>}
         </div>
       </div>
       <div className="flex items-center gap-2">
+        {isLoading && (
+          <div className="text-sm text-gray-500 dark:text-gray-400 flex items-center gap-2">
+            <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+          </div>
+        )}
         <button
-          className="px-3 py-2 text-sm text-white rounded transition-colors bg-[var(--accent)] hover:brightness-90"
+          className="px-3 py-2 text-sm text-white rounded transition-colors bg-[var(--accent)] hover:brightness-90 disabled:opacity-50 disabled:cursor-not-allowed"
           onClick={() => inputRef.current?.click()}
+          disabled={isLoading}
         >
           Browse…
         </button>
-        <input ref={inputRef} type="file" accept={accept} multiple className="hidden" onChange={onBrowse} />
+        <input ref={inputRef} type="file" accept={accept} multiple className="hidden" onChange={onBrowse} disabled={isLoading} />
       </div>
     </div>
   )

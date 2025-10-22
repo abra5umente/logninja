@@ -20,6 +20,7 @@ import { applyTheme, saveTheme, applyAccent, saveAccent, getInitialTheme, getIni
 import BrandingBanner from './components/BrandingBanner'
 
 // Color palette for different log files
+// Note: Supports up to 10 distinct files; colors repeat after that
 const FILE_COLORS = [
   '#9CAF88', '#88AFCA', '#CA88AF', '#AFCA88', '#CA9C88',
   '#88CA9C', '#9C88CA', '#CAA888', '#88CAA8', '#A888CA'
@@ -55,45 +56,51 @@ export default function App() {
 
     // Generate unique file ID
     const fileId = `file-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
-    const fileColor = FILE_COLORS[loadedFiles.length % FILE_COLORS.length]
 
-    // Airlock Debug Summary: detect by filename and print a two-column table to console.
-    try {
-      if (isAirlockDebugFileName(name)) {
-        const summary = extractAirlockSummary(text)
-        setAirlockSummary(summary)
-      } else if (loadedFiles.length === 0) {
-        // Only clear airlock summary if this is the first file
-        setAirlockSummary(null)
+    // Use functional updates to avoid stale closure issues with batched state updates
+    setLoadedFiles(prev => {
+      const fileColor = FILE_COLORS[prev.length % FILE_COLORS.length]
+
+      // Airlock Debug Summary: detect by filename and print a two-column table to console.
+      try {
+        if (isAirlockDebugFileName(name)) {
+          const summary = extractAirlockSummary(text)
+          setAirlockSummary(summary)
+        } else if (prev.length === 0) {
+          // Only clear airlock summary if this is the first file
+          setAirlockSummary(null)
+        }
+      } catch {
+        // Do not crash on errors; continue normal processing.
       }
-    } catch {
-      // Do not crash on errors; continue normal processing.
-    }
 
-    // Parse the log with file information
-    const parsed = parseLog(text, fileId, name)
+      // Parse the log with file information (now using the correct color)
+      const parsed = parseLog(text, fileId, name)
 
-    // Merge with existing entries and sort by timestamp
-    const mergedEntries = [...entries, ...parsed].sort((a, b) => {
-      // Sort by timestamp, putting null timestamps at the end
-      if (a.time === null && b.time === null) return 0
-      if (a.time === null) return 1
-      if (b.time === null) return -1
-      return a.time.getTime() - b.time.getTime()
+      // Update entries using functional update to get latest state
+      setEntries(prevEntries => {
+        // Merge with existing entries and sort by timestamp
+        const mergedEntries = [...prevEntries, ...parsed].sort((a, b) => {
+          // Sort by timestamp, putting null timestamps at the end
+          if (a.time === null && b.time === null) return 0
+          if (a.time === null) return 1
+          if (b.time === null) return -1
+          return a.time.getTime() - b.time.getTime()
+        })
+
+        // Re-index all entries after merging
+        return mergedEntries.map((entry, idx) => ({ ...entry, index: idx }))
+      })
+
+      const newFileInfo: FileInfo = {
+        id: fileId,
+        name,
+        color: fileColor,
+        entryCount: parsed.length
+      }
+
+      return [...prev, newFileInfo]
     })
-
-    // Update loaded files list
-    const newFileInfo: FileInfo = {
-      id: fileId,
-      name,
-      color: fileColor,
-      entryCount: parsed.length
-    }
-    setLoadedFiles(prev => [...prev, newFileInfo])
-
-    // Re-index all entries after merging
-    const reindexed = mergedEntries.map((entry, idx) => ({ ...entry, index: idx }))
-    setEntries(reindexed)
 
     const endTime = performance.now()
     setLoadTime(endTime - startTime)
@@ -104,19 +111,23 @@ export default function App() {
     // Remove file from loaded files
     setLoadedFiles(prev => prev.filter(f => f.id !== fileId))
 
-    // Remove entries from this file
-    const filteredEntries = entries.filter(e => e.fileId !== fileId)
+    // Remove entries from this file and update bookmarks - use functional updates
+    setEntries(prevEntries => {
+      // Get indices to remove before filtering
+      const removedIndices = prevEntries.filter(e => e.fileId === fileId).map(e => e.index)
 
-    // Re-index remaining entries
-    const reindexed = filteredEntries.map((entry, idx) => ({ ...entry, index: idx }))
-    setEntries(reindexed)
+      // Clear bookmarks for removed entries
+      setBookmarked(prevBookmarks => {
+        const updated = new Set(prevBookmarks)
+        removedIndices.forEach(idx => updated.delete(idx))
+        return updated
+      })
 
-    // Clear bookmarks for removed entries
-    const removedIndices = entries.filter(e => e.fileId === fileId).map(e => e.index)
-    setBookmarked(prev => {
-      const updated = new Set(prev)
-      removedIndices.forEach(idx => updated.delete(idx))
-      return updated
+      // Remove entries from this file
+      const filteredEntries = prevEntries.filter(e => e.fileId !== fileId)
+
+      // Re-index remaining entries
+      return filteredEntries.map((entry, idx) => ({ ...entry, index: idx }))
     })
   }
 

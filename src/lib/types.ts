@@ -15,8 +15,8 @@ export interface LogEntry {
   source: string
   message: string
   raw: string
-  fileId: string
-  fileName: string
+  fileId?: string  // Optional for backward compatibility
+  fileName?: string  // Optional for backward compatibility
 }
 
 export interface FiltersState {
