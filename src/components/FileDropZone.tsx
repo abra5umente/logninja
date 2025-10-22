@@ -40,34 +40,42 @@ export default function FileDropZone({ onText }: Props) {
     e.stopPropagation()
     setIsDragging(false)
     setError(null)
-    const files = e.dataTransfer.files
-    if (!files || files.length === 0) return
-    const f = files[0]
-    if (!accept.split(',').some(ext => f.name.toLowerCase().endsWith(ext.replace('.', '')) || f.name.toLowerCase().endsWith(ext))) {
-      // fallback check by extension
-      const ok = /(\.log|\.txt|\.csv)$/i.test(f.name)
-      if (!ok) {
-        setError('Only .log, .txt, .csv files are supported')
-        return
+    const files = Array.from(e.dataTransfer.files)
+    if (files.length === 0) return
+
+    // Process each file
+    for (const f of files) {
+      if (!accept.split(',').some(ext => f.name.toLowerCase().endsWith(ext.replace('.', '')) || f.name.toLowerCase().endsWith(ext))) {
+        // fallback check by extension
+        const ok = /(\.log|\.txt|\.csv)$/i.test(f.name)
+        if (!ok) {
+          setError(`Skipped ${f.name}: only .log, .txt, .csv files are supported`)
+          continue
+        }
       }
-    }
-    try {
-      const text = await decodeFile(f)
-      onText(text, f.name)
-    } catch (err) {
-      setError('Failed to read file')
+      try {
+        const text = await decodeFile(f)
+        onText(text, f.name)
+      } catch (err) {
+        setError(`Failed to read ${f.name}`)
+      }
     }
   }, [onText])
 
   const onBrowse = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0]
-    if (!f) return
+    const files = e.target.files
+    if (!files || files.length === 0) return
     setError(null)
-    try {
-      const text = await decodeFile(f)
-      onText(text, f.name)
-    } catch {
-      setError('Failed to read file')
+
+    // Process each file
+    for (let i = 0; i < files.length; i++) {
+      const f = files[i]
+      try {
+        const text = await decodeFile(f)
+        onText(text, f.name)
+      } catch {
+        setError(`Failed to read ${f.name}`)
+      }
     }
     e.target.value = ''
   }, [onText])
@@ -81,7 +89,7 @@ export default function FileDropZone({ onText }: Props) {
     >
       <div className="flex items-center gap-3">
         <div className="text-gray-600 dark:text-gray-300">
-          <div className="font-medium">Drag & drop a log file</div>
+          <div className="font-medium">Drag & drop log files (multiple supported)</div>
           <div className="text-xs text-gray-500 dark:text-gray-400">Accepted: .log, .txt, .csv</div>
           {error && <div className="text-xs text-red-600 dark:text-red-400 mt-1">{error}</div>}
         </div>
@@ -93,7 +101,7 @@ export default function FileDropZone({ onText }: Props) {
         >
           Browse…
         </button>
-        <input ref={inputRef} type="file" accept={accept} className="hidden" onChange={onBrowse} />
+        <input ref={inputRef} type="file" accept={accept} multiple className="hidden" onChange={onBrowse} />
       </div>
     </div>
   )
