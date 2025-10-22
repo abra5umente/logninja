@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { LogEntry } from '../lib/types'
+import { LogEntry, FileInfo } from '../lib/types'
 
 interface Props {
   rows: LogEntry[]
@@ -9,6 +9,7 @@ interface Props {
   onToggleBookmark?: (index: number) => void
   selectedIndex?: number | null
   onSelectRow?: (index: number) => void
+  loadedFiles?: FileInfo[]
 }
 
 const ROW_HEIGHT = 28 // px
@@ -21,7 +22,7 @@ function formatTime(entry: LogEntry): string {
   return entry.timeStr || ''
 }
 
-export default function VirtualTable({ rows, height: propHeight, highlightRe = null, bookmarked, onToggleBookmark, selectedIndex = null, onSelectRow }: Props) {
+export default function VirtualTable({ rows, height: propHeight, highlightRe = null, bookmarked, onToggleBookmark, selectedIndex = null, onSelectRow, loadedFiles = [] }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [scrollTop, setScrollTop] = useState(0)
   const [wrapLines, setWrapLines] = useState(false)
@@ -30,6 +31,13 @@ export default function VirtualTable({ rows, height: propHeight, highlightRe = n
     return saved ? parseInt(saved, 10) : DEFAULT_ROWS
   })
   const [currentPage, setCurrentPage] = useState(1)
+
+  // Create a map of fileId to color for quick lookup
+  const fileColorMap = useMemo(() => {
+    const map = new Map<string, string>()
+    loadedFiles.forEach(file => map.set(file.id, file.color))
+    return map
+  }, [loadedFiles])
   
   // Pagination logic
   const pageSize = userRows
@@ -176,12 +184,18 @@ export default function VirtualTable({ rows, height: propHeight, highlightRe = n
                 {useVirtual ? (
                   <div style={{ height: totalHeight }}>
                     <div style={{ transform: `translateY(${offsetY}px)` }}>
-                      {items.map((r) => (
+                      {items.map((r) => {
+                        const fileColor = r.fileId ? fileColorMap.get(r.fileId) : undefined
+                        return (
                        <div
                          key={r.index}
                          className={`grid ${gridCols} text-[12px] px-3 items-center border-b border-gray-50 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 ${selectedIndex === r.index ? 'bg-blue-50 dark:bg-blue-900/20' : ''}`}
-                         style={{ height: ROW_HEIGHT }}
-                         title={r.message}
+                         style={{
+                           height: ROW_HEIGHT,
+                           borderLeft: fileColor ? `3px solid ${fileColor}` : undefined,
+                           paddingLeft: fileColor ? '10px' : undefined
+                         }}
+                         title={r.fileName ? `${r.fileName}: ${r.message}` : r.message}
                          onClick={() => onSelectRow && onSelectRow(r.index)}
                          role="row"
                          aria-selected={selectedIndex === r.index}
@@ -199,16 +213,23 @@ export default function VirtualTable({ rows, height: propHeight, highlightRe = n
                          </div>
                          <div className={msgCellClass} title={r.message}>{shouldHighlight ? renderHighlight(r.message, highlightRe) : r.message}</div>
                        </div>
-                     ))}
+                        )
+                      })}
                    </div>
                  </div>
                ) : (
                  <div>
-                   {items.map((r) => (
+                   {items.map((r) => {
+                     const fileColor = r.fileId ? fileColorMap.get(r.fileId) : undefined
+                     return (
                      <div
                        key={r.index}
                        className={`grid ${gridCols} text-[12px] px-3 items-start border-b border-gray-50 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 ${selectedIndex === r.index ? 'bg-blue-50 dark:bg-blue-900/20' : ''}`}
-                       title={r.message}
+                       style={{
+                         borderLeft: fileColor ? `3px solid ${fileColor}` : undefined,
+                         paddingLeft: fileColor ? '10px' : undefined
+                       }}
+                       title={r.fileName ? `${r.fileName}: ${r.message}` : r.message}
                        onClick={() => onSelectRow && onSelectRow(r.index)}
                        role="row"
                        aria-selected={selectedIndex === r.index}
@@ -226,7 +247,8 @@ export default function VirtualTable({ rows, height: propHeight, highlightRe = n
                        </div>
                        <div className={msgCellClass} title={r.message}>{shouldHighlight ? renderHighlight(r.message, highlightRe) : r.message}</div>
                      </div>
-                   ))}
+                     )
+                   })}
                  </div>
                )}
              </div>

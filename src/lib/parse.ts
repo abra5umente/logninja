@@ -143,7 +143,7 @@ function detectLevel(s: string): { level: LogLevel; idx: number; len: number } |
   return { level, idx, len }
 }
 
-export function parseLog(text: string): LogEntry[] {
+export function parseLog(text: string, fileId: string = '', fileName: string = ''): LogEntry[] {
   const lines = text.replace(/\r\n?/g, '\n').split('\n')
   const out: LogEntry[] = []
   let lastEntry: LogEntry | null = null
@@ -214,6 +214,8 @@ export function parseLog(text: string): LogEntry[] {
           source,
           message: msg,
           raw: rawLine,
+          fileId,
+          fileName,
         }
         out.push(entry)
         lastEntry = entry
@@ -247,6 +249,8 @@ export function parseLog(text: string): LogEntry[] {
           source: `MSI (${mode}) ${thread}`,
           message: msg,
           raw: rawLine,
+          fileId,
+          fileName,
         }
         out.push(entry)
         lastEntry = entry
@@ -264,6 +268,8 @@ export function parseLog(text: string): LogEntry[] {
           source: ip,
           message: `${req} ${status} ${size} ${ref !== '-' ? ref : ''} ${ua}`.trim(),
           raw: rawLine,
+          fileId,
+          fileName,
         }
         out.push(entry)
         lastEntry = entry
@@ -284,6 +290,8 @@ export function parseLog(text: string): LogEntry[] {
           source: (prefix || '').trim(),
           message: msg,
           raw: rawLine,
+          fileId,
+          fileName,
         }
         out.push(entry)
         lastEntry = entry
@@ -300,6 +308,8 @@ export function parseLog(text: string): LogEntry[] {
           source: mj.source,
           message: mj.message,
           raw: rawLine,
+          fileId,
+          fileName,
         }
         out.push(entry)
         lastEntry = entry
@@ -327,6 +337,8 @@ export function parseLog(text: string): LogEntry[] {
       source: '',
       message,
       raw: rawLine,
+      fileId,
+      fileName,
     }
     out.push(entry)
     lastEntry = entry
@@ -341,7 +353,9 @@ export function parseLog(text: string): LogEntry[] {
       level: 'WARN',
       source: 'LogNinja',
       message: `File truncated: showing first ${maxLines.toLocaleString()} lines of ${lines.length.toLocaleString()} total lines`,
-      raw: `[WARN] File truncated: showing first ${maxLines.toLocaleString()} lines of ${lines.length.toLocaleString()} total lines`
+      raw: `[WARN] File truncated: showing first ${maxLines.toLocaleString()} lines of ${lines.length.toLocaleString()} total lines`,
+      fileId,
+      fileName,
     })
   }
   

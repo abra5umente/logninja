@@ -4,7 +4,7 @@ import SearchBar from './components/SearchBar'
 import LevelFilters from './components/LevelFilters'
 import VirtualTable from './components/VirtualTable'
 import { parseLog } from './lib/parse'
-import { FiltersState, LogEntry, LogLevel } from './lib/types'
+import { FiltersState, LogEntry, LogLevel, FileInfo } from './lib/types'
 import TimelinePanel from './components/TimelinePanel'
 import PresetsDropdown from './components/PresetsDropdown'
 import { buildSearchRegex } from './lib/search'
@@ -19,8 +19,15 @@ import SettingsSidebar from './components/SettingsSidebar'
 import { applyTheme, saveTheme, applyAccent, saveAccent, getInitialTheme, getInitialAccent } from './lib/theme'
 import BrandingBanner from './components/BrandingBanner'
 
+// Color palette for different log files
+// Note: Supports up to 10 distinct files; colors repeat after that
+const FILE_COLORS = [
+  '#9CAF88', '#88AFCA', '#CA88AF', '#AFCA88', '#CA9C88',
+  '#88CA9C', '#9C88CA', '#CAA888', '#88CAA8', '#A888CA'
+]
+
 export default function App() {
-  const [fileName, setFileName] = useState<string>('')
+  const [loadedFiles, setLoadedFiles] = useState<FileInfo[]>([])
   const [entries, setEntries] = useState<LogEntry[]>([])
   const [filters, setFilters] = useState<FiltersState>({
     selectedLevel: null,
@@ -46,23 +53,82 @@ export default function App() {
 
   const onText = (text: string, name: string) => {
     const startTime = performance.now()
-    setFileName(name)
-    // Airlock Debug Summary: detect by filename and print a two-column table to console.
-    try {
-      if (isAirlockDebugFileName(name)) {
-        const summary = extractAirlockSummary(text)
-        setAirlockSummary(summary)
-      } else {
-        setAirlockSummary(null)
+
+    // Generate unique file ID
+    const fileId = `file-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+
+    // Use functional updates to avoid stale closure issues with batched state updates
+    setLoadedFiles(prev => {
+      const fileColor = FILE_COLORS[prev.length % FILE_COLORS.length]
+
+      // Airlock Debug Summary: detect by filename and print a two-column table to console.
+      try {
+        if (isAirlockDebugFileName(name)) {
+          const summary = extractAirlockSummary(text)
+          setAirlockSummary(summary)
+        } else if (prev.length === 0) {
+          // Only clear airlock summary if this is the first file
+          setAirlockSummary(null)
+        }
+      } catch {
+        // Do not crash on errors; continue normal processing.
       }
-    } catch {
-      // Do not crash on errors; continue normal processing.
-    }
-    const parsed = parseLog(text)
-    setEntries(parsed)
+
+      // Parse the log with file information (now using the correct color)
+      const parsed = parseLog(text, fileId, name)
+
+      // Update entries using functional update to get latest state
+      setEntries(prevEntries => {
+        // Merge with existing entries and sort by timestamp
+        const mergedEntries = [...prevEntries, ...parsed].sort((a, b) => {
+          // Sort by timestamp, putting null timestamps at the end
+          if (a.time === null && b.time === null) return 0
+          if (a.time === null) return 1
+          if (b.time === null) return -1
+          return a.time.getTime() - b.time.getTime()
+        })
+
+        // Re-index all entries after merging
+        return mergedEntries.map((entry, idx) => ({ ...entry, index: idx }))
+      })
+
+      const newFileInfo: FileInfo = {
+        id: fileId,
+        name,
+        color: fileColor,
+        entryCount: parsed.length
+      }
+
+      return [...prev, newFileInfo]
+    })
+
     const endTime = performance.now()
     setLoadTime(endTime - startTime)
     setShowLoadBanner(true)
+  }
+
+  const removeFile = (fileId: string) => {
+    // Remove file from loaded files
+    setLoadedFiles(prev => prev.filter(f => f.id !== fileId))
+
+    // Remove entries from this file and update bookmarks - use functional updates
+    setEntries(prevEntries => {
+      // Get indices to remove before filtering
+      const removedIndices = prevEntries.filter(e => e.fileId === fileId).map(e => e.index)
+
+      // Clear bookmarks for removed entries
+      setBookmarked(prevBookmarks => {
+        const updated = new Set(prevBookmarks)
+        removedIndices.forEach(idx => updated.delete(idx))
+        return updated
+      })
+
+      // Remove entries from this file
+      const filteredEntries = prevEntries.filter(e => e.fileId !== fileId)
+
+      // Re-index remaining entries
+      return filteredEntries.map((entry, idx) => ({ ...entry, index: idx }))
+    })
   }
 
   const { re: compiledRe } = useMemo(() => buildSearchRegex(filters.query, filters.useRegex), [filters.query, filters.useRegex])
@@ -185,7 +251,7 @@ export default function App() {
       <BrandingBanner />
       {showLoadBanner && (
         <LoadBanner
-          fileName={fileName}
+          fileName={loadedFiles.length > 0 ? `${loadedFiles.length} file${loadedFiles.length > 1 ? 's' : ''}` : ''}
           loadTime={loadTime}
           entriesCount={entries.length}
           onClose={() => setShowLoadBanner(false)}
@@ -193,10 +259,32 @@ export default function App() {
       )}
       <div className="relative z-10 max-w-[1400px] mx-auto p-4">
         <header className="mb-4 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-          <div>
+          <div className="flex flex-wrap items-center gap-2">
+            {loadedFiles.length > 0 && (
+              <>
+                <span className="text-xs text-gray-500">Loaded files ({loadedFiles.length}):</span>
+                {loadedFiles.map(file => (
+                  <div
+                    key={file.id}
+                    className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs text-white"
+                    style={{ backgroundColor: file.color }}
+                  >
+                    <span>{file.name} ({file.entryCount.toLocaleString()})</span>
+                    <button
+                      type="button"
+                      onClick={() => removeFile(file.id)}
+                      className="ml-1 hover:opacity-75"
+                      aria-label={`Remove ${file.name}`}
+                      title="Remove file"
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </>
+            )}
           </div>
           <div className="flex items-center gap-2">
-            {fileName && <span className="text-xs text-gray-500">Loaded: {fileName}</span>}
             <button
               type="button"
               className="ml-2 p-2 rounded border border-gray-200 dark:border-gray-700 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 transition-colors"
@@ -267,7 +355,7 @@ export default function App() {
           <div className="mb-3">
             <LogSummary
               entries={entries}
-              fileName={fileName}
+              fileName={loadedFiles.length > 0 ? loadedFiles.map(f => f.name).join(', ') : ''}
               loadTime={loadTime}
             />
           </div>
@@ -278,7 +366,7 @@ export default function App() {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-[1fr_320px] lg:grid-cols-[1fr_380px] gap-4">
-          <VirtualTable rows={filtered} height={560} highlightRe={highlightRe} bookmarked={bookmarked} onToggleBookmark={toggleBookmark} selectedIndex={selectedIndex} onSelectRow={setSelectedIndex} />
+          <VirtualTable rows={filtered} height={560} highlightRe={highlightRe} bookmarked={bookmarked} onToggleBookmark={toggleBookmark} selectedIndex={selectedIndex} onSelectRow={setSelectedIndex} loadedFiles={loadedFiles} />
           <TimelinePanel
             entries={entries}
             binMs={binMs}

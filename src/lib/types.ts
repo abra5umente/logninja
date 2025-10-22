@@ -1,5 +1,12 @@
 export type LogLevel = 'ERROR' | 'WARN' | 'INFO' | 'DEBUG' | 'TRACE' | 'UNKNOWN'
 
+export interface FileInfo {
+  id: string
+  name: string
+  color: string
+  entryCount: number
+}
+
 export interface LogEntry {
   index: number
   time: Date | null
@@ -8,6 +15,8 @@ export interface LogEntry {
   source: string
   message: string
   raw: string
+  fileId?: string  // Optional for backward compatibility
+  fileName?: string  // Optional for backward compatibility
 }
 
 export interface FiltersState {
