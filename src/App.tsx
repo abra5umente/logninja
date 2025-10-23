@@ -35,6 +35,8 @@ export default function App() {
     useRegex: false,
     timeRange: null,
     highlightOnly: false,
+    showBookmarksOnly: false,
+    bookmarkContext: 3,
   })
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [theme, setTheme] = useState<'light' | 'dark'>('dark')
@@ -50,6 +52,13 @@ export default function App() {
   const bookmarkedRows = useMemo(() => entries.filter(e => bookmarked.has(e.index)), [entries, bookmarked])
   const toggleBookmark = (idx: number) => setBookmarked(prev => { const n = new Set(prev); if (n.has(idx)) n.delete(idx); else n.add(idx); return n })
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null)
+
+  // Auto-disable bookmark mode when all bookmarks are removed
+  useEffect(() => {
+    if (bookmarked.size === 0 && filters.showBookmarksOnly) {
+      setFilters(f => ({ ...f, showBookmarksOnly: false }))
+    }
+  }, [bookmarked.size, filters.showBookmarksOnly])
 
   const onText = (text: string, name: string) => {
     const startTime = performance.now()
@@ -135,10 +144,30 @@ export default function App() {
   const highlightRe = compiledRe
 
   const filtered = useMemo(() => {
+    // Bookmark-only mode: show bookmarks with context
+    if (filters.showBookmarksOnly) {
+      if (bookmarked.size === 0) return []
+
+      const indicesToInclude = new Set<number>()
+
+      // For each bookmarked entry, add it and context lines
+      bookmarked.forEach(bookmarkIndex => {
+        const contextStart = Math.max(0, bookmarkIndex - filters.bookmarkContext)
+        const contextEnd = Math.min(entries.length - 1, bookmarkIndex + filters.bookmarkContext)
+
+        for (let i = contextStart; i <= contextEnd; i++) {
+          indicesToInclude.add(i)
+        }
+      })
+
+      // Filter to only included indices (maintains chronological order)
+      return entries.filter(e => indicesToInclude.has(e.index))
+    }
+
     const re = highlightRe
     let q = filters.query.trim()
     if (q && !filters.useRegex) q = q.toLowerCase()
-    
+
     // If highlightOnly is enabled, don't filter by search query
     if (filters.highlightOnly) {
       return entries.filter(e => {
@@ -153,7 +182,7 @@ export default function App() {
         return true
       })
     }
-    
+
     // Normal filtering mode
     return entries.filter(e => {
       if (filters.selectedLevel && e.level !== filters.selectedLevel) return false
@@ -173,7 +202,7 @@ export default function App() {
       }
       return hay.toLowerCase().includes(q)
     })
-  }, [entries, filters, highlightRe])
+  }, [entries, filters, highlightRe, bookmarked])
 
   // Removed sample log loader
 
@@ -235,6 +264,8 @@ export default function App() {
       useRegex: false,
       timeRange: null,
       highlightOnly: false,
+      showBookmarksOnly: false,
+      bookmarkContext: 3,
     })
   }
 
@@ -325,7 +356,39 @@ export default function App() {
         </div>
 
         <div className="mb-3 flex flex-col md:flex-row gap-3 md:items-center md:justify-between">
-          <LevelFilters selectedLevel={filters.selectedLevel} onSelect={selectLevel} />
+          <div className="flex flex-col sm:flex-row gap-3 sm:items-center">
+            <LevelFilters selectedLevel={filters.selectedLevel} onSelect={selectLevel} />
+
+            {bookmarked.size > 0 && (
+              <div className="flex items-center gap-2">
+                <label className="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 select-none">
+                  <input
+                    type="checkbox"
+                    checked={filters.showBookmarksOnly}
+                    onChange={(e) => setFilters(f => ({ ...f, showBookmarksOnly: e.target.checked }))}
+                  />
+                  Show bookmarks only ({bookmarked.size})
+                </label>
+
+                {filters.showBookmarksOnly && (
+                  <div className="flex items-center gap-1">
+                    <label className="text-xs text-gray-600 dark:text-gray-400">Context:</label>
+                    <select
+                      value={filters.bookmarkContext}
+                      onChange={(e) => setFilters(f => ({ ...f, bookmarkContext: parseInt(e.target.value, 10) }))}
+                      className="px-2 py-1 border border-gray-300 dark:border-gray-600 rounded text-xs bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                    >
+                      <option value="1">±1 line</option>
+                      <option value="3">±3 lines</option>
+                      <option value="5">±5 lines</option>
+                      <option value="10">±10 lines</option>
+                    </select>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
           <div className="flex items-center gap-3">
             <PresetsDropdown onSelect={(pattern) => setFilters(f => ({ ...f, query: pattern, useRegex: true }))} />
             <SearchBar
