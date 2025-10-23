@@ -7,11 +7,14 @@ A fast, client‑side log viewer built with Vite + React + TypeScript. Drag and 
 - Basic log summary view on upload
 - Search: plain text or regex, with match highlighting
   - Search has both filter and highlight-only modes
+  - Clear button to quickly reset search
 - Histogram with automatic chunking
   - User-configurable chunk lengths
 - Horizontal scroll + Wrap toggle for long lines
 - Row selection + Ctrl/Cmd+C to copy the full raw line
-- Bookmarks: star lines and export them (CSV/Markdown includes “Bookmarked Lines”)
+  - Selected rows persist across filter changes (auto-scrolls to keep selected row visible)
+- Bookmarks: star lines and export them (CSV/Markdown includes "Bookmarked Lines")
+  - **Bookmark-only view**: Show only bookmarked lines with configurable context (±1, 3, 5, or 10 lines)
 - Airlock summary (auto when filename includes `airlock`; Windows + Linux agents)
 
 ## Screenshots
