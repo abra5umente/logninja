@@ -152,11 +152,16 @@ export default function App() {
 
       // For each bookmarked entry, add it and context lines
       bookmarked.forEach(bookmarkIndex => {
-        const contextStart = Math.max(0, bookmarkIndex - filters.bookmarkContext)
-        const contextEnd = Math.min(entries.length - 1, bookmarkIndex + filters.bookmarkContext)
+        // Find the actual array position of this bookmarked entry
+        const arrayPosition = entries.findIndex(e => e.index === bookmarkIndex)
+        if (arrayPosition < 0) return // Bookmark no longer exists
+
+        const contextStart = Math.max(0, arrayPosition - filters.bookmarkContext)
+        const contextEnd = Math.min(entries.length - 1, arrayPosition + filters.bookmarkContext)
 
         for (let i = contextStart; i <= contextEnd; i++) {
-          indicesToInclude.add(i)
+          // Add the actual entry index, not the array position
+          indicesToInclude.add(entries[i].index)
         }
       })
 

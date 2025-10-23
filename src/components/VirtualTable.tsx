@@ -103,7 +103,7 @@ export default function VirtualTable({ rows, height: propHeight, highlightRe = n
       const centerOffset = (containerHeight / 2) - (ROW_HEIGHT / 2)
       container.scrollTop = Math.max(0, targetScrollTop - centerOffset)
     }
-  }, [currentPageData, selectedIndex])
+  }, [selectedIndex, currentPage, rows.length, pageSize])
 
   useEffect(() => {
     const el = containerRef.current
