@@ -25,6 +25,8 @@ export interface FiltersState {
   useRegex: boolean
   timeRange?: { start: Date; end: Date } | null
   highlightOnly: boolean
+  showBookmarksOnly: boolean
+  bookmarkContext: number
 }
 
 export interface ChunkBin {

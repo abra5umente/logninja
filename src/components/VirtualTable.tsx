@@ -63,10 +63,47 @@ export default function VirtualTable({ rows, height: propHeight, highlightRe = n
     localStorage.setItem('virtualTableRows', userRows.toString())
   }, [userRows])
 
-  // Reset to first page when rows change
+  // Navigate to page containing selected row, or reset to page 1
   useEffect(() => {
+    if (selectedIndex !== null && selectedIndex !== undefined) {
+      // Find where the selected row is in the current filtered results
+      const indexInFiltered = rows.findIndex(r => r.index === selectedIndex)
+      if (indexInFiltered >= 0) {
+        // Calculate which page contains this row
+        const targetPage = Math.floor(indexInFiltered / pageSize) + 1
+        setCurrentPage(targetPage)
+        return
+      }
+    }
+    // Default: reset to page 1 when filters change
     setCurrentPage(1)
-  }, [rows.length])
+  }, [rows.length, selectedIndex, pageSize])
+
+  // Scroll to selected row after page change has rendered
+  useEffect(() => {
+    if (selectedIndex === null || selectedIndex === undefined) return
+
+    const container = containerRef.current
+    if (!container) return
+
+    // Find the selected row in current page data
+    const indexInCurrentPage = currentPageData.findIndex(r => r.index === selectedIndex)
+    if (indexInCurrentPage < 0) return // Selected row not on current page
+
+    // Calculate scroll position
+    const targetScrollTop = indexInCurrentPage * ROW_HEIGHT
+    const containerHeight = container.clientHeight
+    const currentScroll = container.scrollTop
+    const rowTop = targetScrollTop
+    const rowBottom = rowTop + ROW_HEIGHT
+
+    // Only scroll if the row is not already visible
+    if (rowTop < currentScroll || rowBottom > currentScroll + containerHeight) {
+      // Center the row in the viewport
+      const centerOffset = (containerHeight / 2) - (ROW_HEIGHT / 2)
+      container.scrollTop = Math.max(0, targetScrollTop - centerOffset)
+    }
+  }, [selectedIndex, currentPage, rows.length, pageSize])
 
   useEffect(() => {
     const el = containerRef.current
