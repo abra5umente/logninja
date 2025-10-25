@@ -11,237 +11,258 @@ interface Props {
   virtualTableRows?: number
 }
 
+type TimelineLevel = 'day' | 'hour' | '15min' | 'minute' | 'second'
+
+interface DrillState {
+  level: TimelineLevel
+  parentRange: { start: Date; end: Date } | null
+}
+
+const LEVEL_CONFIG = {
+  day: { ms: 86400000, label: 'Day', next: 'hour' as TimelineLevel, plural: 'Days' },
+  hour: { ms: 3600000, label: 'Hour', next: '15min' as TimelineLevel, plural: 'Hours' },
+  '15min': { ms: 900000, label: '15 Min', next: 'minute' as TimelineLevel, plural: '15 Min' },
+  minute: { ms: 60000, label: 'Minute', next: 'second' as TimelineLevel, plural: 'Minutes' },
+  second: { ms: 1000, label: 'Second', next: null, plural: 'Seconds' }
+}
+
 export default function TimelinePanel({ entries, binMs, setBinMs, onSelectRange, activeRange }: Props) {
-  const bins = useMemo(() => groupByBinsMs(entries, binMs), [entries, binMs])
+  const [drillState, setDrillState] = useState<DrillState>({ level: 'day', parentRange: null })
+  const [drillHistory, setDrillHistory] = useState<DrillState[]>([])
+
+  // Calculate time span of all entries
+  const timeSpan = useMemo(() => {
+    if (entries.length === 0) return 0
+    const times = entries.map(e => e.time).filter(Boolean) as Date[]
+    if (times.length === 0) return 0
+
+    // Use reduce instead of spread operator to avoid stack overflow with large arrays
+    let min = Infinity
+    let max = -Infinity
+    for (const time of times) {
+      const t = time.getTime()
+      if (t < min) min = t
+      if (t > max) max = t
+    }
+
+    return max - min
+  }, [entries])
+
+  // Determine appropriate level based on time span and drill state
+  const currentLevel: TimelineLevel = useMemo(() => {
+    if (drillState.parentRange) {
+      return drillState.level
+    }
+
+    // Auto-select level based on span
+    const HOUR = 3600000
+    const DAY = 86400000
+
+    if (timeSpan <= DAY) return 'hour'
+    return 'day'
+  }, [timeSpan, drillState])
+
+  // Filter entries to current drill range
+  const filteredEntries = useMemo(() => {
+    if (!drillState.parentRange) return entries
+
+    return entries.filter(e => {
+      if (!e.time) return false
+      const t = e.time.getTime()
+      return t >= drillState.parentRange!.start.getTime() && t < drillState.parentRange!.end.getTime()
+    })
+  }, [entries, drillState.parentRange])
+
+  // Generate bins for current level
+  const bins = useMemo(() => {
+    return groupByBinsMs(filteredEntries, LEVEL_CONFIG[currentLevel].ms)
+  }, [filteredEntries, currentLevel])
+
   const maxCount = useMemo(() => bins.reduce((m, b) => Math.max(m, b.count), 0), [bins])
-  const [open, setOpen] = useState<Set<number>>(new Set())
-  const [currentPage, setCurrentPage] = useState(1)
-  const [userPageSize, setUserPageSize] = useState(() => {
-    const saved = localStorage.getItem('timelinePageSize')
-    return saved ? parseInt(saved, 10) : 25
-  })
-  
-  // Pagination logic
-  const pageSize = userPageSize
-  const totalPages = Math.ceil(bins.length / pageSize)
-  const shouldPaginate = bins.length > 20
-  
-  // Get current page data
-  const getCurrentPageData = () => {
-    if (!shouldPaginate) return bins
-    const startIndex = (currentPage - 1) * pageSize
-    const endIndex = startIndex + pageSize
-    return bins.slice(startIndex, endIndex)
+  const [selectedBinIndex, setSelectedBinIndex] = useState<number | null>(null)
+
+  // Calculate aggregate stats for current filter
+  const filterStats = useMemo(() => {
+    if (!activeRange) return null
+
+    const totalCount = filteredEntries.length
+    const levelCounts: Record<string, number> = {}
+
+    filteredEntries.forEach(entry => {
+      const level = entry.level || 'UNKNOWN'
+      levelCounts[level] = (levelCounts[level] || 0) + 1
+    })
+
+    return { totalCount, levelCounts }
+  }, [filteredEntries, activeRange])
+
+  const formatRange = (b: ChunkBin) => {
+    const start = b.start
+
+    if (currentLevel === 'day') {
+      return `${start.toLocaleDateString()}`
+    } else if (currentLevel === 'hour') {
+      return `${start.getHours()}:00`
+    } else if (currentLevel === '15min') {
+      return `${start.getHours()}:${String(start.getMinutes()).padStart(2, '0')}`
+    } else if (currentLevel === 'minute') {
+      return `${start.getHours()}:${String(start.getMinutes()).padStart(2, '0')}`
+    } else {
+      return `${start.getHours()}:${String(start.getMinutes()).padStart(2, '0')}:${String(start.getSeconds()).padStart(2, '0')}`
+    }
   }
-  
-  const currentPageData = getCurrentPageData()
-  
-  // Save user preference to localStorage
-  React.useEffect(() => {
-    localStorage.setItem('timelinePageSize', userPageSize.toString())
-  }, [userPageSize])
 
-  // Reset to first page when bins change or page size changes
-  React.useEffect(() => {
-    setCurrentPage(1)
-  }, [bins.length, userPageSize])
+  const handleBinClick = (bin: ChunkBin, idx: number) => {
+    const nextLevel = LEVEL_CONFIG[currentLevel].next
 
-  const toggle = (i: number) => setOpen(prev => {
-    const n = new Set(prev)
-    if (n.has(i)) n.delete(i); else n.add(i)
-    return n
-  })
+    // Always filter the log view to the selected time range
+    onSelectRange({ start: bin.start, end: bin.end })
+    setSelectedBinIndex(idx)
 
-  const formatRange = (b: ChunkBin) => `${fmtTime(b.start)} - ${fmtTime(b.end)}`
+    if (!nextLevel) {
+      // At deepest level, stay here with filter applied
+      return
+    }
+
+    // Save current state to history before drilling down
+    setDrillHistory(prev => [...prev, drillState])
+
+    // Drill down to next level while keeping the filter
+    setDrillState({
+      level: nextLevel,
+      parentRange: { start: bin.start, end: bin.end }
+    })
+  }
+
+  const handleDrillUp = () => {
+    if (drillHistory.length === 0) {
+      // No history, reset to initial state
+      setDrillState({ level: 'day', parentRange: null })
+      setSelectedBinIndex(null)
+      onSelectRange(null)
+      return
+    }
+
+    // Pop the last state from history
+    const previousState = drillHistory[drillHistory.length - 1]
+    setDrillHistory(prev => prev.slice(0, -1))
+    setDrillState(previousState)
+    setSelectedBinIndex(null)
+
+    // Update filter to match the previous state's range
+    if (previousState.parentRange) {
+      onSelectRange(previousState.parentRange)
+    } else {
+      onSelectRange(null)
+    }
+  }
 
   return (
-    <aside className="w-full md:w-80 lg:w-96 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 flex flex-col rounded-md">
-      <div className="flex items-center justify-between bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-100 px-3 py-2 text-xs">
-        <div className="text-sm font-semibold">Timeline</div>
-        <div className="flex items-center gap-2">
-          <label className="text-[11px]">Chunk by</label>
-          <select
-            className="text-[11px] border border-gray-300 dark:border-gray-600 rounded px-2 py-1 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
-            value={binMs}
-            onChange={(e) => setBinMs(parseInt(e.target.value, 10))}
-          >
-            <option value={1000}>1 sec</option>
-            <option value={5000}>5 sec</option>
-            <option value={15000}>15 sec</option>
-            <option value={30000}>30 sec</option>
-            <option value={60000}>1 min</option>
-            <option value={300000}>5 min</option>
-            <option value={900000}>15 min</option>
-          </select>
-        </div>
-        {shouldPaginate && (
-          <div className="flex items-center gap-2">
-            <label className="text-[11px]">Show</label>
-            <select
-              className="text-[11px] border border-gray-300 dark:border-gray-600 rounded px-2 py-1 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
-              value={userPageSize}
-              onChange={(e) => setUserPageSize(parseInt(e.target.value, 10))}
-            >
-              <option value={10}>10</option>
-              <option value={25}>25</option>
-              <option value={50}>50</option>
-              <option value={100}>100</option>
-            </select>
-          </div>
-        )}
-
-      </div>
-      <div className="px-3 py-2 border-b border-gray-200 dark:border-gray-700">
-        {activeRange ? (
-          <div className="flex items-center justify-between text-xs">
-            <div className="text-gray-700 dark:text-gray-300">Filtered: {fmtTime(activeRange.start)} - {fmtTime(activeRange.end)}</div>
-            <button className="text-[var(--accent)] hover:underline" onClick={() => onSelectRange(null)}>Clear</button>
-          </div>
-        ) : (
-          <div className="text-xs text-gray-500 dark:text-gray-400">Click a bar to filter</div>
-        )}
-      </div>
-      
-      {shouldPaginate && (
-        <div className="flex items-center justify-center gap-2 px-3 py-2 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700">
-          <button
-            className="px-2 py-1 border border-gray-300 dark:border-gray-600 rounded text-[11px] hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
-            onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-            disabled={currentPage === 1}
-            title="Previous page"
-          >
-            ←
-          </button>
-          <span className="text-[11px] text-gray-600 dark:text-gray-300">
-            {currentPage} / {totalPages}
-          </span>
-          <button
-            className="px-2 py-1 border border-gray-300 dark:border-gray-600 rounded text-[11px] hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
-            onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-            disabled={currentPage === totalPages}
-            title="Next page"
-          >
-            →
-          </button>
-        </div>
-      )}
-
-      <div className="p-3 flex-shrink-0">
-        <Histogram bins={currentPageData} max={maxCount} onSelect={(b) => onSelectRange({ start: b.start, end: b.end })} />
-      </div>
-
-      <div className="px-3 pb-3 overflow-auto flex-1 min-h-0">
+    <div className="w-full border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-md flex-shrink-0">
+      <div className="bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-100 px-3 py-1.5 text-xs">
         <div className="flex items-center justify-between mb-1">
-          <div className="text-xs font-semibold text-gray-700 dark:text-gray-200">Chunks</div>
-          {shouldPaginate && (
-            <select
-              className="text-[11px] border border-gray-300 dark:border-gray-600 rounded px-2 py-1 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 min-w-[120px]"
-              value=""
-              onChange={(e) => {
-                if (e.target.value) {
-                  const chunkIndex = parseInt(e.target.value, 10)
-                  const targetPage = Math.floor(chunkIndex / userPageSize) + 1
-                  setCurrentPage(targetPage)
-                  e.target.value = "" // Reset selection
-                }
-              }}
-            >
-              <option value="">Jump to chunk...</option>
-              {bins.map((bin, index) => (
-                <option key={index} value={index}>
-                  {fmtTime(bin.start)} - {fmtTime(bin.end)} ({bin.count})
-                </option>
-              ))}
-            </select>
+          <div className="text-sm font-semibold">Timeline</div>
+          {activeRange && (
+            <button className="text-[11px] text-[var(--accent)] hover:underline" onClick={() => onSelectRange(null)}>Clear Filter</button>
           )}
         </div>
-        <div className="border border-gray-100 dark:border-gray-700 rounded">
-          {currentPageData.map((b, i) => {
-            const globalIndex = shouldPaginate ? (currentPage - 1) * pageSize + i : i
-            return (
-              <div key={globalIndex}>
-                <button
-                  onClick={() => toggle(globalIndex)}
-                  className="w-full flex items-center justify-between text-left px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-700 border-b border-gray-50 dark:border-gray-700 last:border-b-0"
-                  title="Toggle chunk details"
-                >
-                  <div className="text-[12px] text-gray-800 dark:text-gray-200 truncate">{formatRange(b)}</div>
-                  <div className="text-[12px] text-gray-600 dark:text-gray-400">{b.count}</div>
-                </button>
-                {open.has(globalIndex) && (
-                  <div className="px-2 pb-2">
-                    <LevelBadges bin={b} />
-                    <button
-                      onClick={() => onSelectRange({ start: b.start, end: b.end })}
-                      className="mt-2 text-xs text-[var(--accent)] hover:underline"
-                    >Filter to this range</button>
-                  </div>
-                )}
-              </div>
-            )
-          })}
+
+        {/* Breadcrumb Navigation */}
+        <div className="flex items-center gap-2">
+          <div className="text-[11px] text-gray-600 dark:text-gray-400">
+            Viewing: <span className="font-semibold text-gray-800 dark:text-gray-200">{LEVEL_CONFIG[currentLevel].label}</span>
+            {bins.length > 0 && <span className="ml-1">({bins.length} {currentLevel === 'day' ? 'days' : currentLevel === 'hour' ? 'hours' : 'bins'})</span>}
+          </div>
+          {drillState.parentRange && (
+            <button
+              className="text-[10px] px-2 py-0.5 bg-gray-200 dark:bg-gray-600 hover:bg-gray-300 dark:hover:bg-gray-500 rounded"
+              onClick={handleDrillUp}
+            >
+              ← Back to {drillHistory.length > 0 ? LEVEL_CONFIG[drillHistory[drillHistory.length - 1].level].plural : 'All'}
+            </button>
+          )}
         </div>
-        
-        {shouldPaginate && (
-          <div className="mt-3 flex items-center justify-center gap-2">
-            <button
-              className="px-2 py-1 border border-gray-300 dark:border-gray-600 rounded text-[11px] hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
-              onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-              disabled={currentPage === 1}
-              title="Previous page"
-            >
-              ←
-            </button>
-            <span className="text-[11px] text-gray-600 dark:text-gray-300">
-              {currentPage} / {totalPages}
-            </span>
-            <button
-              className="px-2 py-1 border border-gray-300 dark:border-gray-600 rounded text-[11px] hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
-              onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-              disabled={currentPage === totalPages}
-              title="Next page"
-            >
-              →
-            </button>
-          </div>
-        )}
-        {shouldPaginate && (
-          <div className="text-xs text-gray-500 dark:text-gray-400 text-center">
-            Showing {pageSize} chunks per page
-          </div>
-        )}
       </div>
-    </aside>
+
+      {bins.length === 0 ? (
+        <div className="p-2 text-center text-xs text-gray-500 dark:text-gray-400">No timestamped entries.</div>
+      ) : (
+        <>
+          {/* Horizontal Histogram */}
+          <div className="px-3 py-2">
+            <HorizontalHistogram
+              bins={bins}
+              max={maxCount}
+              onSelect={handleBinClick}
+              selectedIndex={selectedBinIndex}
+              currentLevel={currentLevel}
+            />
+          </div>
+
+          {/* Filter Details - Always reserve space to prevent layout shift */}
+          <div className="px-3 pb-2 border-t border-gray-200 dark:border-gray-700 pt-2" style={{ minHeight: '50px' }}>
+            {filterStats && (
+              <>
+                <div className="text-xs font-semibold text-gray-700 dark:text-gray-200 mb-1">
+                  Filtered: {filterStats.totalCount.toLocaleString()} {filterStats.totalCount === 1 ? 'entry' : 'entries'}
+                </div>
+                <LevelBadgesFromCounts levelCounts={filterStats.levelCounts} />
+              </>
+            )}
+          </div>
+        </>
+      )}
+    </div>
   )
 }
 
-function Histogram({ bins, max, onSelect }: { bins: ChunkBin[]; max: number; onSelect: (b: ChunkBin) => void }) {
-  const scale = (v: number) => max === 0 ? 0 : Math.max(2, Math.round((v / max) * 100))
+function HorizontalHistogram({ bins, max, onSelect, selectedIndex, currentLevel }: {
+  bins: ChunkBin[]
+  max: number
+  onSelect: (b: ChunkBin, idx: number) => void
+  selectedIndex: number | null
+  currentLevel: TimelineLevel
+}) {
+  const scale = (v: number) => max === 0 ? 0 : Math.max(12, Math.round((v / max) * 50))
+  const nextLevel = LEVEL_CONFIG[currentLevel].next
+
   return (
-    <div className="space-y-1">
-      {bins.map((b, i) => (
-        <div key={i} className="flex items-center gap-2 group">
-          <div className="w-24 text-[11px] text-gray-500 dark:text-gray-400 tabular-nums">{fmtTime(b.start)}</div>
-          <div className="flex-1 relative">
-            <button
-              onClick={() => onSelect(b)}
-              className="h-4 rounded transition-colors absolute left-0 top-0"
-              style={{ 
-                width: `${Math.min(scale(b.count), 100)}%`,
-                backgroundColor: 'var(--accent)',
-                opacity: 0.2
-              }}
-              onMouseEnter={(e) => e.currentTarget.style.opacity = '0.3'}
-              onMouseLeave={(e) => e.currentTarget.style.opacity = '0.2'}
-              title={`${fmtTime(b.start)} • ${b.count} entries`}
-            />
-          </div>
-          <div className="text-[11px] text-gray-600 dark:text-gray-400 w-6 text-right">{b.count}</div>
-        </div>
-      ))}
-      {bins.length === 0 && (
-        <div className="text-xs text-gray-500 dark:text-gray-400">No timestamped entries.</div>
-      )}
+    <div className="w-full overflow-x-auto">
+      <div className="flex gap-1.5 min-w-full pb-1" style={{ minHeight: '60px' }}>
+        {bins.map((b, i) => {
+          const height = scale(b.count)
+          const isSelected = selectedIndex === i
+          const tooltipAction = nextLevel ? `Click to drill into ${LEVEL_CONFIG[nextLevel].label}` : 'Click to filter'
+          return (
+            <div
+              key={i}
+              className="flex-1 flex flex-col items-stretch min-w-[40px] border border-gray-300 dark:border-gray-600 rounded bg-gray-100 dark:bg-gray-700 p-1"
+            >
+              {/* Clickable bar with count inside */}
+              <button
+                onClick={() => onSelect(b, i)}
+                className="w-full rounded transition-all relative flex items-center justify-center font-semibold text-white text-[10px]"
+                style={{
+                  height: `${height}px`,
+                  minHeight: '24px',
+                  backgroundColor: isSelected ? 'var(--accent)' : 'var(--accent)',
+                  opacity: isSelected ? 0.9 : 0.5
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.opacity = '0.75'}
+                onMouseLeave={(e) => e.currentTarget.style.opacity = isSelected ? '0.9' : '0.5'}
+                title={`${formatBinTime(b, currentLevel)} • ${b.count} entries\n${tooltipAction}`}
+              >
+                {b.count}
+              </button>
+
+              {/* Horizontal date/time label */}
+              <div className="text-[9px] text-gray-700 dark:text-gray-300 text-center mt-1 font-medium whitespace-nowrap">
+                {formatBinTime(b, currentLevel)}
+              </div>
+            </div>
+          )
+        })}
+      </div>
     </div>
   )
 }
@@ -265,8 +286,37 @@ function LevelBadges({ bin }: { bin: ChunkBin }) {
   )
 }
 
-function fmtTime(d: Date) {
-  const hh = String(d.getHours()).padStart(2, '0')
-  const mm = String(d.getMinutes()).padStart(2, '0')
-  return `${hh}:${mm}`
+function LevelBadgesFromCounts({ levelCounts }: { levelCounts: Record<string, number> }) {
+  const entries = Object.entries(levelCounts).filter(([_, v]) => (v ?? 0) > 0) as [string, number][]
+  if (entries.length === 0) return <div className="text-[11px] text-gray-500 dark:text-gray-400">No data</div>
+  const color = (lvl: string) => ({
+    ERROR: 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-100',
+    WARN: 'bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-100',
+    INFO: 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-100',
+    DEBUG: 'bg-gray-100 text-gray-700 dark:bg-gray-600 dark:text-gray-100',
+    TRACE: 'bg-slate-100 text-slate-700 dark:bg-slate-600 dark:text-slate-100',
+  } as Record<string, string>)[lvl] || 'bg-gray-100 text-gray-700 dark:bg-gray-600 dark:text-gray-100'
+  return (
+    <div className="flex flex-wrap gap-1">
+      {entries.map(([lvl, count]) => (
+        <span key={lvl} className={`text-[11px] px-1.5 py-0.5 rounded ${color(lvl)}`}>{lvl} {count.toLocaleString()}</span>
+      ))}
+    </div>
+  )
+}
+
+function formatBinTime(b: ChunkBin, level: TimelineLevel): string {
+  const start = b.start
+
+  if (level === 'day') {
+    return start.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+  } else if (level === 'hour') {
+    return `${start.getHours()}:00`
+  } else if (level === '15min') {
+    return `${start.getHours()}:${String(start.getMinutes()).padStart(2, '0')}`
+  } else if (level === 'minute') {
+    return `${start.getHours()}:${String(start.getMinutes()).padStart(2, '0')}`
+  } else {
+    return `${start.getHours()}:${String(start.getMinutes()).padStart(2, '0')}:${String(start.getSeconds()).padStart(2, '0')}`
+  }
 }
