@@ -184,7 +184,7 @@ export default function SettingsSidebar({
                 {/* Footer */}
                 <div className="p-4 border-t border-gray-200 dark:border-gray-700 flex items-center justify-between">
                     <div className="flex items-center gap-3">
-                        <span className="text-xs text-gray-500">LogNinja v0.1.1-beta</span>
+                        <span className="text-xs text-gray-500">LogNinja v0.6.0</span>
                         <button
                             onClick={() => setCreditsOpen(true)}
                             className="text-xs text-gray-500 hover:text-[var(--accent)] transition-colors"

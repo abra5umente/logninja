@@ -73,7 +73,7 @@ Filter by: level, timeRange, search query
   ↓
 Memoized filtered entries
   ↓
-VirtualTable renders current page only
+VirtualTable renders visible rows only (virtual scrolling)
 ```
 
 ### State Management
@@ -110,7 +110,7 @@ setEntries(prevEntries => {
 ### Key Components
 
 - **App.tsx** - Main state container and component orchestrator
-- **VirtualTable.tsx** - Virtual scrolling + pagination table with bookmarking and row selection
+- **VirtualTable.tsx** - High-performance virtual scrolling table with bookmarking, row selection, and dynamic line wrapping
 - **TimelinePanel.tsx** - Histogram visualization with configurable bin sizes
 - **FileDropZone.tsx** - Multi-file drag-drop with encoding detection
 - **SearchBar.tsx** - Search input with regex and highlight-only modes
@@ -155,16 +155,23 @@ The parser supports 11+ log formats with intelligent detection:
 ### Virtual Scrolling (`VirtualTable.tsx`)
 
 **Performance optimizations:**
+- Always-on virtual scrolling for both wrap and no-wrap modes
 - Only renders visible rows + overscan (12 rows above/below viewport)
-- Row height: 28px fixed
-- Pagination with configurable page size (default 100 rows)
+- Row heights:
+  - No-wrap mode: 28px fixed height
+  - Wrap mode: Dynamic heights (min 28px, auto-expand based on content)
+  - Estimated average for wrap: 48px (used for scroll calculations)
 - Highlighting disabled for >1000 visible rows
 - File color coding (max 10 distinct colors)
+- Handles millions of log entries without performance degradation
 
 **Features:**
+- True infinite scrolling (no pagination)
 - Row selection (Ctrl/Cmd+C copies raw line)
 - Bookmarking (star icon)
-- Wrap/no-wrap toggle
+- Dynamic line wrapping toggle
+  - Wrap OFF: Single-line rows with horizontal scroll
+  - Wrap ON: Multi-line rows that adapt to content length
 - Keyboard navigation
 
 ### Timeline System (`lib/time.ts`)

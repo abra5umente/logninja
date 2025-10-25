@@ -12,7 +12,8 @@ interface Props {
   loadedFiles?: FileInfo[]
 }
 
-const ROW_HEIGHT = 28 // px
+const ROW_HEIGHT = 28 // px - height for single-line (no-wrap) rows
+const ROW_HEIGHT_WRAPPED = 48 // px - estimated average height for wrapped rows (~1.5-2 lines)
 const OVERSCAN = 12
 const DEFAULT_HEIGHT = 600 // px - default viewport height
 
@@ -33,9 +34,10 @@ export default function VirtualTable({ rows, height: propHeight, highlightRe = n
     return map
   }, [loadedFiles])
 
-  // Container and content height
+  // Container and content height - use appropriate row height based on wrap mode
+  const rowHeight = wrapLines ? ROW_HEIGHT_WRAPPED : ROW_HEIGHT
   const height = propHeight || DEFAULT_HEIGHT
-  const totalHeight = rows.length * ROW_HEIGHT
+  const totalHeight = rows.length * rowHeight
 
   // Scroll to selected row when selection changes
   useEffect(() => {
@@ -48,20 +50,20 @@ export default function VirtualTable({ rows, height: propHeight, highlightRe = n
     const indexInFiltered = rows.findIndex(r => r.index === selectedIndex)
     if (indexInFiltered < 0) return // Selected row not found
 
-    // Calculate scroll position
-    const targetScrollTop = indexInFiltered * ROW_HEIGHT
+    // Calculate scroll position using current row height
+    const targetScrollTop = indexInFiltered * rowHeight
     const containerHeight = container.clientHeight
     const currentScroll = container.scrollTop
     const rowTop = targetScrollTop
-    const rowBottom = rowTop + ROW_HEIGHT
+    const rowBottom = rowTop + rowHeight
 
     // Only scroll if the row is not already visible
     if (rowTop < currentScroll || rowBottom > currentScroll + containerHeight) {
       // Center the row in the viewport
-      const centerOffset = (containerHeight / 2) - (ROW_HEIGHT / 2)
+      const centerOffset = (containerHeight / 2) - (rowHeight / 2)
       container.scrollTop = Math.max(0, targetScrollTop - centerOffset)
     }
-  }, [selectedIndex, rows.length])
+  }, [selectedIndex, rows.length, rowHeight])
 
   useEffect(() => {
     const el = containerRef.current
@@ -69,23 +71,20 @@ export default function VirtualTable({ rows, height: propHeight, highlightRe = n
     const onScroll = () => setScrollTop(el.scrollTop)
     el.addEventListener('scroll', onScroll)
     return () => el.removeEventListener('scroll', onScroll)
-  }, [])
+  }, [rows.length]) // Re-run when rows change to ensure listener is attached
 
   const { start, end } = useMemo(() => {
-    const startIndex = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN)
-    const visibleCount = Math.ceil(height / ROW_HEIGHT) + 2 * OVERSCAN
+    const startIndex = Math.max(0, Math.floor(scrollTop / rowHeight) - OVERSCAN)
+    const visibleCount = Math.ceil(height / rowHeight) + 2 * OVERSCAN
     const endIndex = Math.min(rows.length - 1, startIndex + visibleCount)
-    console.log('Virtual scroll:', { scrollTop, startIndex, endIndex, rowsLength: rows.length, height, totalHeight: rows.length * ROW_HEIGHT })
     return { start: startIndex, end: endIndex }
-  }, [scrollTop, rows.length, height])
+  }, [scrollTop, rows.length, height, rowHeight])
 
-  const useVirtual = !wrapLines
-  const items = useVirtual ? rows.slice(start, end + 1) : rows
-  const offsetY = useVirtual ? start * ROW_HEIGHT : 0
+  // Always use virtual scrolling for performance
+  const items = rows.slice(start, end + 1)
+  const offsetY = start * rowHeight
   const gridCols = wrapLines ? 'grid-cols-[24px_200px_90px_1fr]' : 'grid-cols-[24px_200px_90px_max-content]'
   const msgCellClass = wrapLines ? 'text-gray-900 dark:text-gray-100 whitespace-pre-wrap break-words' : 'text-gray-900 dark:text-gray-100 whitespace-nowrap'
-
-  console.log('Render state:', { useVirtual, itemsLength: items.length, offsetY, totalHeight, height, rowsLength: rows.length })
 
   // Limit highlighting for performance with very large datasets
   const shouldHighlight = items.length <= 1000
@@ -132,82 +131,52 @@ export default function VirtualTable({ rows, height: propHeight, highlightRe = n
           </div>
 
           {rows.length === 0 ? (
-             <div className="text-sm text-gray-500 dark:text-gray-400 p-4 text-center">No log entries parsed yet.</div>
-           ) : (
-                           <div ref={containerRef} style={{ height: useVirtual ? height : 'auto', overflow: 'auto' }} className="relative">
-                {useVirtual ? (
-                  <>
-                    <div style={{ height: totalHeight, width: '100%' }}></div>
-                    <div style={{ transform: `translateY(${offsetY}px)`, position: 'absolute', top: 0, left: 0, right: 0 }}>
-                      {items.map((r) => {
-                        const fileColor = r.fileId ? fileColorMap.get(r.fileId) : undefined
-                        return (
-                       <div
-                         key={r.index}
-                         className={`grid ${gridCols} text-[12px] px-3 items-center border-b border-gray-50 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 ${selectedIndex === r.index ? 'bg-blue-50 dark:bg-blue-900/20' : ''}`}
-                         style={{
-                           height: ROW_HEIGHT,
-                           borderLeft: fileColor ? `3px solid ${fileColor}` : undefined,
-                           paddingLeft: fileColor ? '10px' : undefined
-                         }}
-                         title={r.fileName ? `${r.fileName}: ${r.message}` : r.message}
-                         onClick={() => onSelectRow && onSelectRow(r.index)}
-                         role="row"
-                         aria-selected={selectedIndex === r.index}
-                       >
-                         <div className="text-center">
-                           <button
-                             className={`w-5 h-5 leading-5 text-center rounded ${bookmarked?.has(r.index) ? 'text-yellow-500' : 'text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300'}`}
-                             title={bookmarked?.has(r.index) ? 'Unbookmark' : 'Bookmark'}
-                             onClick={(e) => { e.stopPropagation(); onToggleBookmark && onToggleBookmark(r.index) }}
-                           >★</button>
-                         </div>
-                         <div className="tabular-nums text-gray-700 dark:text-gray-200" title={formatTime(r)}>{shouldHighlight ? renderHighlight(formatTime(r), highlightRe) : formatTime(r)}</div>
-                         <div className="font-medium">
-                           <span className={levelColor(r.level)}>{shouldHighlight ? renderHighlight(r.level, highlightRe) : r.level}</span>
-                         </div>
-                         <div className={msgCellClass} title={r.message}>{shouldHighlight ? renderHighlight(r.message, highlightRe) : r.message}</div>
-                       </div>
-                        )
-                      })}
+            <div className="text-sm text-gray-500 dark:text-gray-400 p-4 text-center">No log entries parsed yet.</div>
+          ) : (
+            <div ref={containerRef} style={{ height, overflow: 'auto' }} className="relative">
+              {/* Spacer div to create scrollable area */}
+              <div style={{ height: totalHeight, width: '100%', pointerEvents: 'none' }}></div>
+              {/* Absolutely positioned content window that moves with scroll */}
+              <div style={{ transform: `translateY(${offsetY}px)`, position: 'absolute', top: 0, left: 0, right: 0, pointerEvents: 'auto' }}>
+                {items.map((r) => {
+                  const fileColor = r.fileId ? fileColorMap.get(r.fileId) : undefined
+                  // Use items-start for wrapped lines to align top, items-center for single lines
+                  const itemsAlign = wrapLines ? 'items-start' : 'items-center'
+                  return (
+                    <div
+                      key={r.index}
+                      className={`grid ${gridCols} text-[12px] px-3 ${itemsAlign} border-b border-gray-50 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 ${selectedIndex === r.index ? 'bg-blue-50 dark:bg-blue-900/20' : ''}`}
+                      style={{
+                        minHeight: wrapLines ? 28 : rowHeight,
+                        height: wrapLines ? 'auto' : rowHeight,
+                        borderLeft: fileColor ? `3px solid ${fileColor}` : undefined,
+                        paddingLeft: fileColor ? '10px' : undefined,
+                        paddingTop: wrapLines ? '6px' : undefined,
+                        paddingBottom: wrapLines ? '6px' : undefined
+                      }}
+                      title={r.fileName ? `${r.fileName}: ${r.message}` : r.message}
+                      onClick={() => onSelectRow && onSelectRow(r.index)}
+                      role="row"
+                      aria-selected={selectedIndex === r.index}
+                    >
+                      <div className="text-center">
+                        <button
+                          className={`w-5 h-5 leading-5 text-center rounded ${bookmarked?.has(r.index) ? 'text-yellow-500' : 'text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300'}`}
+                          title={bookmarked?.has(r.index) ? 'Unbookmark' : 'Bookmark'}
+                          onClick={(e) => { e.stopPropagation(); onToggleBookmark && onToggleBookmark(r.index) }}
+                        >★</button>
+                      </div>
+                      <div className="tabular-nums text-gray-700 dark:text-gray-200" title={formatTime(r)}>{shouldHighlight ? renderHighlight(formatTime(r), highlightRe) : formatTime(r)}</div>
+                      <div className="font-medium">
+                        <span className={levelColor(r.level)}>{shouldHighlight ? renderHighlight(r.level, highlightRe) : r.level}</span>
+                      </div>
+                      <div className={msgCellClass} title={r.message}>{shouldHighlight ? renderHighlight(r.message, highlightRe) : r.message}</div>
                     </div>
-                  </>
-               ) : (
-                 <div>
-                   {items.map((r) => {
-                     const fileColor = r.fileId ? fileColorMap.get(r.fileId) : undefined
-                     return (
-                     <div
-                       key={r.index}
-                       className={`grid ${gridCols} text-[12px] px-3 items-start border-b border-gray-50 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 ${selectedIndex === r.index ? 'bg-blue-50 dark:bg-blue-900/20' : ''}`}
-                       style={{
-                         borderLeft: fileColor ? `3px solid ${fileColor}` : undefined,
-                         paddingLeft: fileColor ? '10px' : undefined
-                       }}
-                       title={r.fileName ? `${r.fileName}: ${r.message}` : r.message}
-                       onClick={() => onSelectRow && onSelectRow(r.index)}
-                       role="row"
-                       aria-selected={selectedIndex === r.index}
-                     >
-                       <div className="text-center">
-                         <button
-                           className={`w-5 h-5 leading-5 text-center rounded ${bookmarked?.has(r.index) ? 'text-yellow-500' : 'text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300'}`}
-                           title={bookmarked?.has(r.index) ? 'Unbookmark' : 'Bookmark'}
-                           onClick={(e) => { e.stopPropagation(); onToggleBookmark && onToggleBookmark(r.index) }}
-                         >★</button>
-                       </div>
-                       <div className="tabular-nums text-gray-700 dark:text-gray-200" title={formatTime(r)}>{shouldHighlight ? renderHighlight(formatTime(r), highlightRe) : formatTime(r)}</div>
-                       <div className="font-medium">
-                         <span className={levelColor(r.level)}>{shouldHighlight ? renderHighlight(r.level, highlightRe) : r.level}</span>
-                       </div>
-                       <div className={msgCellClass} title={r.message}>{shouldHighlight ? renderHighlight(r.message, highlightRe) : r.message}</div>
-                     </div>
-                     )
-                   })}
-                 </div>
-               )}
-             </div>
-           )}
+                  )
+                })}
+              </div>
+            </div>
+          )}
          </div>
        </div>
     </div>
