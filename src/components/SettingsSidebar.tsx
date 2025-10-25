@@ -198,7 +198,15 @@ export default function SettingsSidebar({
                 {/* Footer */}
                 <div className="p-4 border-t border-gray-200 dark:border-gray-700 flex items-center justify-between">
                     <div className="flex items-center gap-3">
-                        <span className="text-xs text-gray-500">LogNinja v0.6.0</span>
+                        <a
+                            href="https://github.com/abra5umente/logninja"
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-sm font-medium"
+                            style={{ color: 'var(--accent)' }}
+                        >
+                            Logninja v1.0.0 - GitHub
+                        </a>
                         <button
                             onClick={() => setCreditsOpen(true)}
                             className="text-xs text-gray-500 hover:text-[var(--accent)] transition-colors"
@@ -206,15 +214,6 @@ export default function SettingsSidebar({
                             Credits
                         </button>
                     </div>
-                    <a
-                        href="https://github.com/abra5umente/logninja"
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-sm font-medium"
-                        style={{ color: 'var(--accent)' }}
-                    >
-                        GitHub
-                    </a>
                 </div>
             </aside>
             
