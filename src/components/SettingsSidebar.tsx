@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import CreditsModal from './CreditsModal'
 
 interface SettingsSidebarProps {
@@ -27,6 +27,20 @@ export default function SettingsSidebar({
     setAccent
 }: SettingsSidebarProps) {
     const [creditsOpen, setCreditsOpen] = useState(false)
+
+    // ESC key handler
+    useEffect(() => {
+        if (!open) return
+
+        const handleEsc = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') {
+                onClose()
+            }
+        }
+
+        window.addEventListener('keydown', handleEsc)
+        return () => window.removeEventListener('keydown', handleEsc)
+    }, [open, onClose])
     
     return (
         <>

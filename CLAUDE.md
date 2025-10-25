@@ -40,15 +40,51 @@ The Dockerfile uses a multi-stage build: Node 18 Alpine for building, Nginx Alpi
 
 ## Architecture
 
+### UI Layout
+
+The application uses a **three-column grid layout** (`grid-cols-[280px_1fr_320px]`):
+
+**Left Sidebar (280px - conditionally visible):**
+- Level filter buttons (dynamic - only shows levels present in loaded files)
+- Log summary statistics
+- Export controls (CSV, Markdown, Copy, Reset)
+- Airlock summary button (when applicable)
+
+**Center Column (flexible):**
+- VirtualTable (main log viewer) - front and center
+- Bookmark controls (when bookmarks exist)
+- Timeline histogram (horizontal, beneath table with card-style bins)
+
+**Right Sidebar (320px - conditionally visible):**
+- Search bar with regex and highlight-only modes
+- Search presets dropdown
+- Loaded files list with click-to-filter
+
+**Special Elements:**
+- Settings cog: Bottom-right corner
+- Loading overlay: Full-screen blur with animated logo and spinner during file loading
+- Airlock summary: Modal overlay (when applicable)
+- Global drag-and-drop: Entire window is droppable with overlay indicator
+
+**Empty State:**
+When no files loaded, shows clean centered overlay with:
+- Large "logninja." logo
+- "Drag & drop log files anywhere" text
+- "Browse Files..." button
+- All other UI elements hidden for minimal distraction
+
+**UI Visibility:**
+All UI elements (sidebars, timeline, search) are hidden until files are loaded, providing a clean initial experience.
+
 ### Entry Points and Data Flow
 
 **Application Bootstrap:**
 - `index.html` → `main.tsx` → `App.tsx` (root component)
-- App.tsx is the main state container that orchestrates all components
+- App.tsx is the main state container that orchestrates all components with three-column layout
 
 **Upload Flow:**
 ```
-FileDropZone (drag/drop files)
+Global drag-and-drop OR Browse button
   ↓
 decodeFile() handles UTF-8/UTF-16 encoding detection
   ↓
@@ -69,12 +105,24 @@ All entries
   ↓
 buildSearchRegex() compiles user query (lib/search.ts)
   ↓
-Filter by: level, timeRange, search query
+Filter by: file IDs (multi-select), log levels (multi-select), timeRange, search query
   ↓
 Memoized filtered entries
   ↓
 VirtualTable renders visible rows only (virtual scrolling)
 ```
+
+**File Filtering:**
+- Click a file → shows only that file's entries
+- Ctrl+Click files → multi-select mode (toggle files on/off)
+- Click selected file again → deselects it (shows all files)
+- Visual feedback: selected files at full opacity, unselected dimmed to 40%
+
+**Level Filtering:**
+- Dynamically shows only levels present in loaded/filtered files
+- Click a level → shows only that level
+- Ctrl+Click levels → multi-select mode (toggle levels on/off)
+- Visual feedback: selected levels highlighted, unselected dimmed to 50%
 
 ### State Management
 
@@ -109,14 +157,17 @@ setEntries(prevEntries => {
 
 ### Key Components
 
-- **App.tsx** - Main state container and component orchestrator
+- **App.tsx** - Main state container and component orchestrator with three-column grid layout
 - **VirtualTable.tsx** - High-performance virtual scrolling table with bookmarking, row selection, and dynamic line wrapping
-- **TimelinePanel.tsx** - Histogram visualization with configurable bin sizes
-- **FileDropZone.tsx** - Multi-file drag-drop with encoding detection
+- **TimelinePanel.tsx** - Hierarchical timeline with drill-down visualization and incremental navigation
+- **LoadingOverlay.tsx** - Full-screen loading animation with blur effect, logo, and spinner
 - **SearchBar.tsx** - Search input with regex and highlight-only modes
 - **ExportBar.tsx** - CSV/Markdown export with clipboard support
-- **AirlockSummary.tsx** - Specialized Airlock log metadata display
+- **LevelFilters.tsx** - Dynamic log level filtering with multi-select support
+- **LogSummary.tsx** - Log statistics and metrics display
+- **AirlockSummary.tsx** - Specialized Airlock log metadata display (modal)
 - **SettingsSidebar.tsx** - Theme and accent color customization
+- **LoadBanner.tsx** - Success notification banner after file loading
 
 ### Log Parsing (`lib/parse.ts`)
 
@@ -174,11 +225,44 @@ The parser supports 11+ log formats with intelligent detection:
   - Wrap ON: Multi-line rows that adapt to content length
 - Keyboard navigation
 
-### Timeline System (`lib/time.ts`)
+**Critical Implementation Note:**
+Virtual scrolling requires a **stable, fixed container height** for proper calculations. The container uses `height: propHeight || DEFAULT_HEIGHT` (600px). Do NOT attempt to use dynamic height tracking with flex layouts (`flex: 1`) as this causes:
+- Infinite loops in useEffect dependencies
+- Broken scroll position tracking
+- Page crashes when loading files
 
-Bins entries by configurable time intervals for histogram visualization.
+See NOTES.md for detailed explanation of this issue.
 
-**Available bin sizes:** 1s, 5s, 15s, 30s, 1m, 5m, 15m
+### Timeline System (`TimelinePanel.tsx` + `lib/time.ts`)
+
+The timeline features a **hierarchical drill-down system** with real-time filtering that automatically adjusts to your log file's time span:
+
+**Hierarchy Levels:**
+1. **Day** (86400000ms) - For logs spanning >24 hours
+2. **Hour** (3600000ms) - Drill down from days, or auto-selected for ≤24 hour spans
+3. **15 Min** (900000ms) - Drill down from hours
+4. **Minute** (60000ms) - Drill down from 15-minute bins
+5. **Second** (1000ms) - Deepest level
+
+**Auto-level Detection:**
+- Time span ≤24 hours: Starts at hourly view (24 bins)
+- Time span >24 hours: Starts at daily view
+
+**Drill-Down Navigation:**
+- Click any bin → **filters log view to that time range AND drills down to next level**
+- Incremental back navigation: "← Back to Hours", "← Back to Days", etc.
+- Breadcrumb shows current level: "Viewing: Hour (24 bins)"
+- Log table filters at ALL drill levels, not just the deepest
+- History stack enables one-level-at-a-time back navigation
+
+**UI Design:**
+- Card-based bins (min 40px wide) with borders and spacing for clear separation
+- Event count displayed inside each bin button
+- Horizontal date/time labels (no rotation)
+- Selected bins highlighted, unselected dimmed
+- Bins dynamically scale to fill available width
+- Min height: 60px to prevent header cutoff
+- Fixed statistics panel with level breakdown shown when filtering
 
 **ChunkBin structure:**
 ```typescript
@@ -190,7 +274,47 @@ Bins entries by configurable time intervals for histogram visualization.
 }
 ```
 
-Clicking a bin sets the timeRange filter to show only entries in that interval.
+**Example:** For a 273-day log file:
+1. Start: Daily bins showing events per day
+2. Click "Jan 15" → Hourly bins for Jan 15
+3. Click "14:00" → 15-minute bins for 14:00-15:00
+4. Click "14:30" → Minute bins for 14:30-14:45
+5. Click "14:37" → Second bins for 14:37:00-14:38:00
+6. Click any second → Filters table to that exact second
+
+**Performance Note:**
+For files spanning large time ranges (e.g., >1 year), the timeline uses an iterative approach to avoid stack overflow:
+- Min/max timestamp calculation uses a simple loop instead of spread operators
+- Prevents "Maximum call stack size exceeded" errors with hundreds of thousands of entries
+
+### Loading Animation System (`LoadingOverlay.tsx`)
+
+The app features a **polished loading experience** that provides visual feedback during file processing:
+
+**Animation Stages:**
+1. **Loading Stage**: Full-screen blur overlay fades in (300ms)
+   - Large "logninja." logo in accent color
+   - Spinning loader SVG below logo
+   - "Loading X files..." text
+   - Background blurs to 12px
+
+2. **Complete Stage**: Processing finished (600ms pause)
+   - Spinner fades out
+   - Checkmark animates in with scale transition
+   - Brief celebration moment
+
+3. **Reveal Stage**: Transition to UI (500ms fade)
+   - Overlay fades out completely
+   - Background unblurs
+   - All UI elements (already rendered behind) revealed
+   - User transitions smoothly into log viewer
+
+**Implementation:**
+- State: `loadingStage` ('idle' | 'loading' | 'complete')
+- Non-blocking: files parse while animations play
+- Minimum display time ensures polish even for fast loads
+- CSS transitions handle all blur/fade effects
+- Z-index 50 ensures overlay stays on top
 
 ## Important Patterns
 
@@ -285,6 +409,17 @@ When adding new filter types:
 2. Update filtering logic in App.tsx filtered useMemo
 3. Add UI control in appropriate component
 4. Ensure filter state is included in export summaries
+
+**Current FiltersState fields:**
+- `selectedFiles: string[] | null` - Multi-select file filtering
+- `selectedLevels: LogLevel[] | null` - Multi-select level filtering
+- `selectedLevel: LogLevel | null` - Deprecated, kept for compatibility
+- `query: string` - Search query
+- `useRegex: boolean` - Regex mode toggle
+- `timeRange: {start: Date, end: Date} | null` - Timeline filter
+- `highlightOnly: boolean` - Highlight without filtering
+- `showBookmarksOnly: boolean` - Bookmark-only view
+- `bookmarkContext: number` - Context lines around bookmarks
 
 When modifying state structure:
 1. Update types in `lib/types.ts`

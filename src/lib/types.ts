@@ -20,7 +20,9 @@ export interface LogEntry {
 }
 
 export interface FiltersState {
-  selectedLevel: Exclude<LogLevel, 'UNKNOWN'> | null
+  selectedLevel: Exclude<LogLevel, 'UNKNOWN'> | null  // Deprecated: kept for backward compatibility
+  selectedLevels: LogLevel[] | null
+  selectedFiles: string[] | null
   query: string
   useRegex: boolean
   timeRange?: { start: Date; end: Date } | null

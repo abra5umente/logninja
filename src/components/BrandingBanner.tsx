@@ -16,11 +16,14 @@ export default function BrandingBanner() {
             return
         }
 
-        let index = 0
+        // Start with first character immediately visible
+        let index = 1
+        setCurrentText(fullText.slice(0, 1))
+
         const typeTimer = setInterval(() => {
-            if (index <= fullText.length) {
-                setCurrentText(fullText.slice(0, index))
+            if (index < fullText.length) {
                 index++
+                setCurrentText(fullText.slice(0, index))
             } else {
                 setIsTyping(false)
                 clearInterval(typeTimer)
@@ -48,21 +51,14 @@ export default function BrandingBanner() {
 
     return (
         <div
-            className="fixed left-0 top-0 bottom-0 w-12 -z-10 flex items-center justify-center pointer-events-none select-none"
-            style={{
-                writingMode: 'vertical-rl',
-                textOrientation: 'mixed'
-            }}
+            className="fixed left-4 top-4 z-10 pointer-events-none select-none"
         >
             <div
-                className="text-4xl md:text-5xl lg:text-6xl font-bold tracking-wider"
+                className="text-2xl md:text-3xl font-bold tracking-wide"
                 style={{
-                    transform: 'rotate(180deg)',
-                    color: isDarkMode ? '#9ca3af' : '#374151', // light grey for dark mode, dark grey for light mode
+                    color: isDarkMode ? '#9ca3af' : '#374151',
                     fontFamily: 'monospace',
-                    lineHeight: '1.2',
-                    padding: '0.5rem 0',
-                    opacity: isDarkMode ? 0.3 : 0.2
+                    opacity: isDarkMode ? 0.4 : 0.3
                 }}
             >
                 {currentText}
