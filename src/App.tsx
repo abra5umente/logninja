@@ -564,7 +564,21 @@ export default function App() {
           <main className="flex flex-col gap-3 overflow-hidden"  style={{ maxHeight: 'calc(100vh - 2rem)' }}>
             {/* Virtual Table */}
             <div className="flex-1 min-h-0 relative">
-              <VirtualTable rows={filtered} height={undefined} highlightRe={highlightRe} bookmarked={bookmarked} onToggleBookmark={toggleBookmark} selectedIndex={selectedIndex} onSelectRow={setSelectedIndex} loadedFiles={loadedFiles} />
+              <VirtualTable
+                rows={filtered}
+                height={undefined}
+                highlightRe={highlightRe}
+                bookmarked={bookmarked}
+                onToggleBookmark={toggleBookmark}
+                selectedIndex={selectedIndex}
+                onSelectRow={setSelectedIndex}
+                loadedFiles={loadedFiles}
+                showBookmarksOnly={filters.showBookmarksOnly}
+                onShowBookmarksOnlyChange={(checked) => setFilters(f => ({ ...f, showBookmarksOnly: checked }))}
+                bookmarkContext={filters.bookmarkContext}
+                onBookmarkContextChange={(context) => setFilters(f => ({ ...f, bookmarkContext: context }))}
+                bookmarkCount={bookmarked.size}
+              />
 
               {/* Empty State Overlay */}
               {entries.length === 0 && (
@@ -592,38 +606,6 @@ export default function App() {
                 </div>
               )}
             </div>
-
-            {/* Bookmark Controls (shown below table when bookmarks exist) */}
-            {bookmarked.size > 0 && (
-              <div className="border border-gray-200 dark:border-gray-700 rounded-md p-3 bg-white dark:bg-gray-800">
-                <div className="flex items-center gap-3">
-                  <label className="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 select-none">
-                    <input
-                      type="checkbox"
-                      checked={filters.showBookmarksOnly}
-                      onChange={(e) => setFilters(f => ({ ...f, showBookmarksOnly: e.target.checked }))}
-                    />
-                    Show bookmarks only ({bookmarked.size})
-                  </label>
-
-                  {filters.showBookmarksOnly && (
-                    <div className="flex items-center gap-1">
-                      <label className="text-xs text-gray-600 dark:text-gray-400">Context:</label>
-                      <select
-                        value={filters.bookmarkContext}
-                        onChange={(e) => setFilters(f => ({ ...f, bookmarkContext: parseInt(e.target.value, 10) }))}
-                        className="px-2 py-1 border border-gray-300 dark:border-gray-600 rounded text-xs bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
-                      >
-                        <option value="1">±1 line</option>
-                        <option value="3">±3 lines</option>
-                        <option value="5">±5 lines</option>
-                        <option value="10">±10 lines</option>
-                      </select>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
 
             {/* Timeline - Horizontal */}
             {entries.length > 0 && (

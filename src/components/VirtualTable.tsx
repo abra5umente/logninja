@@ -10,6 +10,11 @@ interface Props {
   selectedIndex?: number | null
   onSelectRow?: (index: number) => void
   loadedFiles?: FileInfo[]
+  showBookmarksOnly?: boolean
+  onShowBookmarksOnlyChange?: (checked: boolean) => void
+  bookmarkContext?: number
+  onBookmarkContextChange?: (context: number) => void
+  bookmarkCount?: number
 }
 
 const ROW_HEIGHT = 28 // px - height for single-line (no-wrap) rows
@@ -22,7 +27,7 @@ function formatTime(entry: LogEntry): string {
   return entry.timeStr || ''
 }
 
-export default function VirtualTable({ rows, height: propHeight, highlightRe = null, bookmarked, onToggleBookmark, selectedIndex = null, onSelectRow, loadedFiles = [] }: Props) {
+export default function VirtualTable({ rows, height: propHeight, highlightRe = null, bookmarked, onToggleBookmark, selectedIndex = null, onSelectRow, loadedFiles = [], showBookmarksOnly = false, onShowBookmarksOnlyChange, bookmarkContext = 3, onBookmarkContextChange, bookmarkCount = 0 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [scrollTop, setScrollTop] = useState(0)
   const [wrapLines, setWrapLines] = useState(false)
@@ -120,6 +125,37 @@ export default function VirtualTable({ rows, height: propHeight, highlightRe = n
               <div>Message</div>
             </div>
             <div className="flex items-center gap-3">
+              {/* Bookmark Controls (only shown when bookmarks exist) */}
+              {bookmarkCount > 0 && (
+                <>
+                  <label className="inline-flex items-center gap-2 text-[11px] select-none cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={showBookmarksOnly}
+                      onChange={(e) => onShowBookmarksOnlyChange?.(e.target.checked)}
+                      className="cursor-pointer"
+                    />
+                    Show bookmarks only ({bookmarkCount})
+                  </label>
+
+                  {showBookmarksOnly && (
+                    <div className="flex items-center gap-1">
+                      <label className="text-[11px] text-gray-600 dark:text-gray-400">Context:</label>
+                      <select
+                        value={bookmarkContext}
+                        onChange={(e) => onBookmarkContextChange?.(parseInt(e.target.value, 10))}
+                        className="px-2 py-1 border border-gray-300 dark:border-gray-600 rounded text-[11px] bg-white dark:bg-gray-700"
+                      >
+                        <option value="1">±1 line</option>
+                        <option value="3">±3 lines</option>
+                        <option value="5">±5 lines</option>
+                        <option value="10">±10 lines</option>
+                      </select>
+                    </div>
+                  )}
+                </>
+              )}
+
               <button
                 className="px-2 py-1 border border-gray-300 dark:border-gray-600 rounded text-[11px] hover:bg-gray-50 dark:hover:bg-gray-600"
                 onClick={() => setWrapLines(w => !w)}
