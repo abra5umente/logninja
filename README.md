@@ -5,12 +5,15 @@ A fast, client‑side log viewer built with Vite + React + TypeScript. Drag and 
 ## Features
 - Drag & drop `.log/.txt/.csv` (UTF‑8/UTF‑16 BOM aware)
 - Basic log summary view on upload
+- **High-performance virtual scrolling**: Handles millions of log entries smoothly
+  - True infinite scrolling (no pagination)
+  - Dynamic line wrapping with auto-height rows
 - Search: plain text or regex, with match highlighting
   - Search has both filter and highlight-only modes
   - Clear button to quickly reset search
 - Histogram with automatic chunking
   - User-configurable chunk lengths
-- Horizontal scroll + Wrap toggle for long lines
+- **Wrap toggle**: Switch between single-line (horizontal scroll) and multi-line (auto-wrap) views
 - Row selection + Ctrl/Cmd+C to copy the full raw line
   - Selected rows persist across filter changes (auto-scrolls to keep selected row visible)
 - Bookmarks: star lines and export them (CSV/Markdown includes "Bookmarked Lines")
@@ -60,9 +63,10 @@ Alternatively, run the container using `docker run --rm -p 8080:80 alexschladets
 ## Keyboard & Tips
 - `/` focuses search, `Ctrl/Cmd+K` opens command palette
 - Click a row, then `Ctrl/Cmd+C` to copy its full raw text
-- Use the Wrap toggle for multi‑line viewing; disable for horizontal scrolling
+- **Wrap toggle**: Enable for multi-line rows that adapt to content length; disable for single-line rows with horizontal scrolling
+- Virtual scrolling works smoothly in both wrap and no-wrap modes for optimal performance
 - Try and find the pizza-flavoured easter egg
 
 ## Privacy
+
 The app runs fully in your browser; logs are not uploaded. Exports are generated locally.
- 
