@@ -205,7 +205,7 @@ export default function SettingsSidebar({
                             className="text-sm font-medium"
                             style={{ color: 'var(--accent)' }}
                         >
-                            Logninja v1.0.0 - GitHub
+                            Logninja v1.0.0-1 - GitHub
                         </a>
                         <button
                             onClick={() => setCreditsOpen(true)}

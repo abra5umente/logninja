@@ -157,13 +157,21 @@ export default function TimelinePanel({ entries, binMs, setBinMs, onSelectRange,
     }
   }
 
+  // Handle clear filter - reset both range and drill state
+  const handleClearFilter = () => {
+    onSelectRange(null)
+    setDrillState({ level: 'day', parentRange: null })
+    setDrillHistory([])
+    setSelectedBinIndex(null)
+  }
+
   return (
-    <div className="w-full border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-md flex-shrink-0">
-      <div className="bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-100 px-3 py-1.5 text-xs">
-        <div className="flex items-center justify-between mb-1">
+    <div className="w-full border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-md flex-shrink-0" style={{ minHeight: '120px' }}>
+      <div className="bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-100 px-3 py-3 text-xs">
+        <div className="flex items-center justify-between mb-2">
           <div className="text-sm font-semibold">Timeline</div>
           {activeRange && (
-            <button className="text-[11px] text-[var(--accent)] hover:underline" onClick={() => onSelectRange(null)}>Clear Filter</button>
+            <button className="text-xs text-[var(--accent)] hover:underline whitespace-nowrap flex-shrink-0" onClick={handleClearFilter}>Clear Filter</button>
           )}
         </div>
 
