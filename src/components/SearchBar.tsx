@@ -7,9 +7,18 @@ interface Props {
   setUseRegex: (b: boolean) => void
   highlightOnly: boolean
   setHighlightOnly: (b: boolean) => void
+  searchMode: 'filter' | 'find'
+  setSearchMode: (mode: 'filter' | 'find') => void
+  currentMatchIndex?: number
+  totalMatches?: number
+  onNextMatch?: () => void
+  onPrevMatch?: () => void
 }
 
-const SearchBar = forwardRef<HTMLInputElement, Props>(function SearchBar({ query, setQuery, useRegex, setUseRegex, highlightOnly, setHighlightOnly }, ref) {
+const SearchBar = forwardRef<HTMLInputElement, Props>(function SearchBar({
+  query, setQuery, useRegex, setUseRegex, highlightOnly, setHighlightOnly,
+  searchMode, setSearchMode, currentMatchIndex, totalMatches, onNextMatch, onPrevMatch
+}, ref) {
   return (
     <div className="flex flex-col gap-2">
       <div className="relative">
@@ -35,6 +44,58 @@ const SearchBar = forwardRef<HTMLInputElement, Props>(function SearchBar({ query
           </button>
         )}
       </div>
+
+      {/* Search Mode Toggle */}
+      <div className="flex gap-1">
+        <button
+          onClick={() => setSearchMode('find')}
+          className={`flex-1 px-2 py-1 text-xs rounded transition-colors ${
+            searchMode === 'find'
+              ? 'bg-[var(--accent)] text-white'
+              : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'
+          }`}
+          title="Jump to matches (like VS Code)"
+        >
+          Find
+        </button>
+        <button
+          onClick={() => setSearchMode('filter')}
+          className={`flex-1 px-2 py-1 text-xs rounded transition-colors ${
+            searchMode === 'filter'
+              ? 'bg-[var(--accent)] text-white'
+              : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'
+          }`}
+          title="Show only matching entries"
+        >
+          Filter
+        </button>
+      </div>
+
+      {/* Find Mode Navigation */}
+      {searchMode === 'find' && query && totalMatches !== undefined && (
+        <div className="flex items-center gap-1">
+          <button
+            onClick={onPrevMatch}
+            disabled={totalMatches === 0}
+            className="px-2 py-1 text-xs bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-300 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
+            title="Previous match (Shift+Enter)"
+          >
+            ↑
+          </button>
+          <div className="flex-1 text-center text-xs text-gray-600 dark:text-gray-400">
+            {totalMatches === 0 ? 'No matches' : `${(currentMatchIndex ?? 0) + 1} of ${totalMatches}`}
+          </div>
+          <button
+            onClick={onNextMatch}
+            disabled={totalMatches === 0}
+            className="px-2 py-1 text-xs bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-300 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
+            title="Next match (Enter)"
+          >
+            ↓
+          </button>
+        </div>
+      )}
+
       <div className="flex flex-col gap-1.5">
         <label className="inline-flex items-center gap-2 text-xs text-gray-700 dark:text-gray-300 select-none">
           <input

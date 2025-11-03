@@ -38,6 +38,8 @@ export default function App() {
     highlightOnly: false,
     showBookmarksOnly: false,
     bookmarkContext: 3,
+    searchMode: 'find',  // Default to find mode (jump to matches)
+    currentMatchIndex: 0,
   })
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [theme, setTheme] = useState<'light' | 'dark'>('dark')
@@ -267,8 +269,8 @@ export default function App() {
     let q = filters.query.trim()
     if (q && !filters.useRegex) q = q.toLowerCase()
 
-    // If highlightOnly is enabled, don't filter by search query
-    if (filters.highlightOnly) {
+    // If find mode or highlightOnly is enabled, don't filter by search query
+    if (filters.searchMode === 'find' || filters.highlightOnly) {
       return entries.filter(e => {
         // File filter
         if (filters.selectedFiles && filters.selectedFiles.length > 0 && e.fileId) {
@@ -321,6 +323,73 @@ export default function App() {
     })
   }, [entries, filters, highlightRe, bookmarked])
 
+  // Find mode: Calculate matching entry indices
+  const matchingIndices = useMemo(() => {
+    if (filters.searchMode !== 'find' || !filters.query.trim()) return []
+
+    const re = highlightRe
+    let q = filters.query.trim()
+    if (q && !filters.useRegex) q = q.toLowerCase()
+
+    // Filter by file/level/time first, then find matches
+    const baseFiltered = entries.filter(e => {
+      // File filter
+      if (filters.selectedFiles && filters.selectedFiles.length > 0 && e.fileId) {
+        if (!filters.selectedFiles.includes(e.fileId)) return false
+      }
+      // Level filter
+      if (filters.selectedLevels && filters.selectedLevels.length > 0) {
+        if (!filters.selectedLevels.includes(e.level)) return false
+      } else if (filters.selectedLevel && e.level !== filters.selectedLevel) {
+        return false
+      }
+      // Time filter
+      if (filters.timeRange && e.time) {
+        const t = e.time.getTime()
+        if (t < filters.timeRange.start.getTime() || t >= filters.timeRange.end.getTime()) return false
+      } else if (filters.timeRange && !e.time) {
+        return false
+      }
+      return true
+    })
+
+    // Find entries that match the search query
+    return baseFiltered
+      .filter(e => {
+        const hay = `${e.timeStr} ${e.level} ${e.message}`
+        if (re) {
+          const flags = re.flags.replace('g', '')
+          const testRe = new RegExp(re.source, flags)
+          return testRe.test(hay)
+        }
+        return hay.toLowerCase().includes(q)
+      })
+      .map(e => e.index)
+  }, [entries, filters.query, filters.useRegex, filters.searchMode, filters.selectedFiles, filters.selectedLevels, filters.selectedLevel, filters.timeRange, highlightRe])
+
+  // Navigate to next/previous match
+  const goToNextMatch = () => {
+    if (matchingIndices.length === 0) return
+    const nextIndex = (filters.currentMatchIndex + 1) % matchingIndices.length
+    setFilters(f => ({ ...f, currentMatchIndex: nextIndex }))
+    setSelectedIndex(matchingIndices[nextIndex])
+  }
+
+  const goToPreviousMatch = () => {
+    if (matchingIndices.length === 0) return
+    const prevIndex = (filters.currentMatchIndex - 1 + matchingIndices.length) % matchingIndices.length
+    setFilters(f => ({ ...f, currentMatchIndex: prevIndex }))
+    setSelectedIndex(matchingIndices[prevIndex])
+  }
+
+  // Auto-jump to first match when query changes in find mode
+  useEffect(() => {
+    if (filters.searchMode === 'find' && filters.query && matchingIndices.length > 0) {
+      setFilters(f => ({ ...f, currentMatchIndex: 0 }))
+      setSelectedIndex(matchingIndices[0])
+    }
+  }, [filters.query, filters.searchMode, matchingIndices.length])
+
   // Removed sample log loader
 
   const selectLevel = (lvl: Exclude<LogLevel, 'UNKNOWN'> | null) => {
@@ -366,6 +435,18 @@ export default function App() {
     function onKeyDown(e: KeyboardEvent) {
       const target = e.target as HTMLElement
       const isTyping = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)
+
+      // Find mode navigation: Enter = next, Shift+Enter = previous
+      if (filters.searchMode === 'find' && filters.query && matchingIndices.length > 0 && e.key === 'Enter') {
+        e.preventDefault()
+        if (e.shiftKey) {
+          goToPreviousMatch()
+        } else {
+          goToNextMatch()
+        }
+        return
+      }
+
       if (!isTyping && e.key === '/') {
         e.preventDefault()
         searchInputRef.current?.focus()
@@ -379,7 +460,7 @@ export default function App() {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [])
+  }, [filters.searchMode, filters.query, matchingIndices.length, goToNextMatch, goToPreviousMatch])
   
   useEffect(() => {
     applyTheme(theme)
@@ -420,6 +501,8 @@ export default function App() {
       highlightOnly: false,
       showBookmarksOnly: false,
       bookmarkContext: 3,
+      searchMode: 'find',
+      currentMatchIndex: 0,
     })
   }
 
@@ -680,6 +763,12 @@ export default function App() {
                     setUseRegex={(b) => setFilters(f => ({ ...f, useRegex: b }))}
                     highlightOnly={filters.highlightOnly}
                     setHighlightOnly={(b) => setFilters(f => ({ ...f, highlightOnly: b }))}
+                    searchMode={filters.searchMode}
+                    setSearchMode={(mode) => setFilters(f => ({ ...f, searchMode: mode }))}
+                    currentMatchIndex={filters.currentMatchIndex}
+                    totalMatches={matchingIndices.length}
+                    onNextMatch={goToNextMatch}
+                    onPrevMatch={goToPreviousMatch}
                     ref={searchInputRef}
                   />
                   <PresetsDropdown onSelect={(pattern) => setFilters(f => ({ ...f, query: pattern, useRegex: true }))} />

@@ -29,6 +29,8 @@ export interface FiltersState {
   highlightOnly: boolean
   showBookmarksOnly: boolean
   bookmarkContext: number
+  searchMode: 'filter' | 'find'  // New: find = jump to matches, filter = show only matches
+  currentMatchIndex: number  // New: tracks which match is currently selected in find mode
 }
 
 export interface ChunkBin {
