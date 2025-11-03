@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useMemo, useEffect, useRef } from 'react'
 import {
   type RegexSegment,
   type SegmentType,
@@ -18,8 +18,38 @@ export default function RegexBuilder({ onClose, onApply, initialQuery = '' }: Pr
     initialQuery ? [createSegment('literal', initialQuery)] : []
   )
   const [editingId, setEditingId] = useState<string | null>(null)
+  const firstInputRef = useRef<HTMLSelectElement>(null)
 
-  const generatedRegex = buildRegexFromSegments(segments)
+  // Memoize expensive regex generation
+  const generatedRegex = useMemo(
+    () => buildRegexFromSegments(segments),
+    [segments]
+  )
+
+  // Check if any segments have validation errors
+  const hasErrors = useMemo(
+    () => segments.some(s => !validateSegment(s).valid),
+    [segments]
+  )
+
+  // ESC key handler to close modal
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose()
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [onClose])
+
+  // Focus management - focus first input when modal opens
+  useEffect(() => {
+    if (firstInputRef.current) {
+      firstInputRef.current.focus()
+    }
+  }, [])
 
   const addSegment = (type: SegmentType = 'literal') => {
     const newSegment = createSegment(type)
@@ -87,7 +117,7 @@ export default function RegexBuilder({ onClose, onApply, initialQuery = '' }: Pr
               <li><strong>Literal:</strong> Match exact text (auto-escaped)</li>
               <li><strong>Wildcard:</strong> Match anything (.*?)</li>
               <li><strong>Not:</strong> Match anything EXCEPT this value (negative lookahead)</li>
-              <li><strong>Custom:</strong> Enter your own regex pattern</li>
+              <li><strong>Custom:</strong> Enter your own regex pattern (⚠️ avoid nested quantifiers like .*.*)</li>
             </ul>
           </div>
 
@@ -111,6 +141,7 @@ export default function RegexBuilder({ onClose, onApply, initialQuery = '' }: Pr
                   onMoveDown={() => moveSegment(segment.id, 'down')}
                   canMoveUp={index > 0}
                   canMoveDown={index < segments.length - 1}
+                  focusRef={index === 0 ? firstInputRef : undefined}
                 />
               ))
             )}
@@ -175,8 +206,9 @@ export default function RegexBuilder({ onClose, onApply, initialQuery = '' }: Pr
           </button>
           <button
             onClick={handleApply}
-            disabled={!generatedRegex}
+            disabled={!generatedRegex || hasErrors}
             className="px-4 py-2 text-sm bg-[var(--accent)] text-white rounded hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
+            title={hasErrors ? 'Fix validation errors before applying' : undefined}
           >
             Apply to Search
           </button>
@@ -198,6 +230,7 @@ interface SegmentEditorProps {
   onMoveDown: () => void
   canMoveUp: boolean
   canMoveDown: boolean
+  focusRef?: React.RefObject<HTMLSelectElement>
 }
 
 function SegmentEditor({
@@ -211,6 +244,7 @@ function SegmentEditor({
   onMoveDown,
   canMoveUp,
   canMoveDown,
+  focusRef,
 }: SegmentEditorProps) {
   const validation = validateSegment(segment)
 
@@ -255,6 +289,7 @@ function SegmentEditor({
           <div className="flex items-center gap-2 mb-2">
             <label className="text-xs font-semibold">Type:</label>
             <select
+              ref={focusRef}
               value={segment.type}
               onChange={(e) => onUpdate({ type: e.target.value as SegmentType })}
               className="px-2 py-1 text-xs bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"

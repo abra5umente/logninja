@@ -28,7 +28,6 @@ const SearchBar = forwardRef<HTMLInputElement, Props>(function SearchBar({
   }
 
   return (
-    <>
     <div className="flex flex-col gap-2">
       <div className="relative">
         <input
@@ -136,17 +135,16 @@ const SearchBar = forwardRef<HTMLInputElement, Props>(function SearchBar({
         </svg>
         Build Query
       </button>
-    </div>
 
-    {/* Regex Builder Modal */}
-    {showRegexBuilder && (
-      <RegexBuilder
-        onClose={() => setShowRegexBuilder(false)}
-        onApply={handleApplyRegex}
-        initialQuery={query}
-      />
-    )}
-    </>
+      {/* Regex Builder Modal */}
+      {showRegexBuilder && (
+        <RegexBuilder
+          onClose={() => setShowRegexBuilder(false)}
+          onApply={handleApplyRegex}
+          initialQuery={useRegex ? '' : query}
+        />
+      )}
+    </div>
   )
 })
 

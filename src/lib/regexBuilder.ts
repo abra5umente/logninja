@@ -2,6 +2,9 @@
  * Regex builder types and utilities for constructing regex patterns visually
  */
 
+import { escapeRegExp as escapeRegex } from './search'
+import { buildSearchRegex } from './search'
+
 export type SegmentType = 'literal' | 'wildcard' | 'not' | 'custom'
 
 export interface RegexSegment {
@@ -11,12 +14,8 @@ export interface RegexSegment {
   description?: string
 }
 
-/**
- * Escapes special regex characters in a literal string
- */
-export function escapeRegex(str: string): string {
-  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-}
+// Counter for generating unique segment IDs
+let segmentIdCounter = 0
 
 /**
  * Converts a segment to its regex pattern representation
@@ -31,11 +30,19 @@ export function segmentToPattern(segment: RegexSegment): string {
       return '.*?'
 
     case 'not': {
-      // Negative lookahead + character class
-      // For paths like "not abc", match anything except that exact string
+      // Negative lookahead pattern
+      // Improved to handle both single words and path segments better
       const escaped = escapeRegex(segment.value)
-      // Match word boundaries or path separators to ensure we're not matching substrings
-      return `(?!${escaped})[^\\s\\/]+`
+
+      // If value contains spaces or special chars, use a more flexible pattern
+      if (/\s/.test(segment.value)) {
+        // For multi-word exclusions: negative lookahead + match any non-slash/non-newline chars
+        return `(?!${escaped})[^\\/\\r\\n]+`
+      }
+
+      // For single words/path segments: negative lookahead + word boundary + word chars
+      // This works better for path components like "NOT abc" in "C:/Program Files/xyz/"
+      return `(?!${escaped}(?:\\/|\\s|$))[^\\/\\s]+`
     }
 
     case 'custom':
@@ -49,9 +56,20 @@ export function segmentToPattern(segment: RegexSegment): string {
 
 /**
  * Builds a complete regex pattern from an array of segments
+ * Returns empty string if validation fails
  */
 export function buildRegexFromSegments(segments: RegexSegment[]): string {
-  return segments.map(segmentToPattern).join('')
+  // Filter out invalid segments
+  const validSegments = segments.filter(s => validateSegment(s).valid)
+
+  if (validSegments.length === 0) return ''
+
+  const pattern = validSegments.map(segmentToPattern).join('')
+
+  // Validate the complete pattern for ReDoS risks using existing validation
+  const validation = buildSearchRegex(pattern, true)
+
+  return validation.re ? pattern : ''
 }
 
 /**
@@ -63,23 +81,43 @@ export function validateSegment(segment: RegexSegment): { valid: boolean; error?
   }
 
   if (segment.type === 'custom') {
+    // Check for basic syntax errors
     try {
       new RegExp(segment.value)
-      return { valid: true }
     } catch (e) {
       return { valid: false, error: 'Invalid regex pattern' }
     }
+
+    // Check for patterns that could cause catastrophic backtracking
+    if (
+      segment.value.includes('.*.*') ||
+      segment.value.includes('++') ||
+      segment.value.includes('**') ||
+      /(\(.*\))[+*]\1/.test(segment.value) // Nested quantifiers like (a+)+
+    ) {
+      return {
+        valid: false,
+        error: 'Pattern may cause performance issues (ReDoS)',
+      }
+    }
+
+    // Warn if pattern is very long
+    if (segment.value.length > 500) {
+      return { valid: false, error: 'Pattern too long (max 500 chars)' }
+    }
+
+    return { valid: true }
   }
 
   return { valid: true }
 }
 
 /**
- * Creates a default segment
+ * Creates a default segment with unique counter-based ID
  */
 export function createSegment(type: SegmentType = 'literal', value: string = ''): RegexSegment {
   return {
-    id: Math.random().toString(36).substring(2, 11),
+    id: `segment-${++segmentIdCounter}`,
     type,
     value,
   }
@@ -91,30 +129,4 @@ export function createSegment(type: SegmentType = 'literal', value: string = '')
 export function parseInitialText(text: string): RegexSegment[] {
   if (!text) return []
   return [createSegment('literal', text)]
-}
-
-/**
- * Splits a segment at given indices
- * Example: "hello world" split at [0, 5] and [5, 11] -> ["hello", " world"]
- */
-export function splitSegment(
-  segment: RegexSegment,
-  startOffset: number,
-  endOffset: number
-): { before?: RegexSegment; middle: RegexSegment; after?: RegexSegment } {
-  const text = segment.value
-
-  const result: { before?: RegexSegment; middle: RegexSegment; after?: RegexSegment } = {
-    middle: createSegment(segment.type, text.slice(startOffset, endOffset)),
-  }
-
-  if (startOffset > 0) {
-    result.before = createSegment(segment.type, text.slice(0, startOffset))
-  }
-
-  if (endOffset < text.length) {
-    result.after = createSegment(segment.type, text.slice(endOffset))
-  }
-
-  return result
 }
