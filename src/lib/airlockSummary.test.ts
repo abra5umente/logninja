@@ -81,12 +81,17 @@ const LOG = [
   '2026-01-05 10:03:01 INFO  Auditmode: false',
   '2026-01-05 10:03:02 INFO  Check In ~ Hash DB Update ~ New hash database version applied successfully, version is now 9',
   '2026-01-05 10:03:02 INFO  Check In ~ Policy Update ~ New policy version applied successfully, version is now 16',
+  '2026-01-05 10:03:04 INFO  RPC: GetAgentInfo: Server:"airlock.example"  ClientVersion:"7.0.1.1234-abcdef0"  PolicyVersion:"v16.9"  GroupParent:"Lab"  GroupName:"Linux Test"  PolicyId:"' + POLICY_B + '"  Mode:EnforcementMode  AuditMode:false  DebugMode:true  OnlineStatus:ONLINE',
   '2026-01-05 10:03:05 DEBUG Username - svc = 5000',
   '2026-01-05 10:03:05 DEBUG BLOCKED: [/usr/bin/ps]',
   '2026-01-05 10:03:05 DEBUG ES Notify message: [ps has been prevented from executing as a result of Allowlisting.]',
   blocked('2026-01-05 10:03:05', '/usr/bin/ps', 'Blocking File - Blocked Execution', '/opt/app/worker', 'Not Signed'),
   blocked('2026-01-05 10:03:06', '/usr/bin/ps', '(CACHED) Blocking File - Blocked Execution', '/opt/app/worker', 'Example Signer <signer@example.com>'),
   blocked('2026-01-05 10:03:07', '/usr/bin/ps', '(CACHED) Blocking File - Blocked Execution', '/opt/app/worker', 'Not Signed'),
+  '2026-01-05 10:04:00 INFO  Clearing fanotify marks...',
+  '2026-01-05 10:04:00 INFO  Closing fanotify...',
+  '2026-01-05 10:04:10 INFO  Starting Airlock Enforcement Agent (v7.0.1.1234-abcdef0)',
+  '2026-01-05 10:04:11 ERROR [/build/agent/airlock/policy.go:50] Policy database seems corrupted...deleting! Setting to Safe Mode.',
 ].join('\n')
 
 describe('isAirlockDebugFileName', () => {
@@ -102,10 +107,11 @@ describe('extractAirlockSummary: Linux 7.x agent debug log', () => {
 
   it('reads agent and host details', () => {
     expect(s['Airlock Version']).toBe('7.0.1.1234-abcdef0')
-    expect(s['Agent Starts']).toBe('1')
+    expect(s['Agent Starts']).toBe('2')
+    expect(s['Agent Stops']).toBe('1')
     expect(s['Debug Logging']).toBe('Yes (16 debug lines)')
-    expect(s['Log Period']).toBe('2026-01-05 10:00:01 to 2026-01-05 10:03:07')
-    expect(s['Errors and Warnings']).toBe('3 errors, 1 warnings')
+    expect(s['Log Period']).toBe('2026-01-05 10:00:01 to 2026-01-05 10:04:11')
+    expect(s['Errors and Warnings']).toBe('4 errors, 1 warnings')
     expect(s['Agent PID']).toBe('4242')
     expect(s['Agent Hash']).toBe(h('0f'))
     expect(s['Kernel Mode']).toBe('FANotify (kernel driver did not load)')
@@ -120,6 +126,15 @@ describe('extractAirlockSummary: Linux 7.x agent debug log', () => {
     expect(s['Machine Id']).toBe(h('1e'))
     expect(s['Packages Indexed']).toBe('3')
     expect(s['Mountpoints Monitored']).toBe('2')
+  })
+
+  it('dates an audit mode change by the switch, not by later lines repeating the value', () => {
+    const s2 = extractAirlockSummary([
+      '2026-01-05 10:00:00 INFO  Auditmode: false',
+      '2026-01-05 11:00:00 INFO  Auditmode: true',
+      '2026-01-05 12:00:00 INFO  Auditmode: true',
+    ].join('\n'))
+    expect(s2['Audit Mode']).toBe('Yes (changed from No at 2026-01-05 11:00:00)')
   })
 
   it('does not read "Version" in the AutoUpdate line as "on"', () => {
@@ -142,6 +157,8 @@ describe('extractAirlockSummary: Linux 7.x agent debug log', () => {
     expect(s['Hash DB Version']).toBe('9 (previously 55)')
     expect(s['Policy Id']).toBe(`${POLICY_B} (previously ${POLICY_A})`)
     expect(s['Policy Updates']).toBe('1')
+    expect(s['Policy Group']).toBe('Lab / Linux Test')
+    expect(s['Safe Mode']).toBe('Entered 1 time (last at 2026-01-05 10:04:11)')
     expect(s['Audit Mode']).toBe('No (changed from Yes at 2026-01-05 10:03:01)')
     expect(s['Self Service Enabled']).toBe('No')
     expect(s['File Extensions Added']).toBe('2')
@@ -188,7 +205,7 @@ describe('extractAirlockSummary: Linux 7.x agent debug log', () => {
     expect(hits('Top Blocked File')).toBe(3)
     expect(hits('Top Blocked Parent')).toBe(3)
     expect(hits('Top Blocked Publisher')).toBe(4)
-    expect(hits('Errors and Warnings')).toBe(4)
+    expect(hits('Errors and Warnings')).toBe(5)
   })
 })
 

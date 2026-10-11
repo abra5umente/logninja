@@ -8,6 +8,7 @@ export const AIRLOCK_FIELD_GROUPS = [
     fields: [
       'Airlock Version',
       'Agent Starts',
+      'Agent Stops',
       'Debug Logging',
       'Log Period',
       'Errors and Warnings',
@@ -52,8 +53,10 @@ export const AIRLOCK_FIELD_GROUPS = [
       'Policy DB Version',
       'Hash DB Version',
       'Policy Id',
+      'Policy Group',
       'Policy Updates',
       'Audit Mode',
+      'Safe Mode',
       'Self Service Enabled',
       'Powershell Constrained Mode',
       'Assembly Reflection Enabled',
@@ -158,6 +161,7 @@ function collectAgentStats(lines: string[]) {
   const s = {
     agentLines: 0,
     starts: 0,
+    stops: 0,
     debugLines: 0,
     debugEnabled: false,
     firstTs: '',
@@ -193,6 +197,8 @@ function collectAgentStats(lines: string[]) {
     policyVersions: [] as string[],
     hashDbVersions: [] as string[],
     policyUpdates: 0,
+    policyGroups: [] as string[],
+    safeModeAt: [] as string[],
     auditModes: [] as { value: string; ts: string }[],
     execs: 0,
     allowed: 0,
@@ -259,6 +265,10 @@ function collectAgentStats(lines: string[]) {
 
     let mm: RegExpMatchArray | null
     if (msg.startsWith('Starting Airlock Enforcement Agent')) s.starts += 1
+    else if (msg.startsWith('Closing fanotify')) s.stops += 1
+    else if (msg.includes('Setting to Safe Mode')) s.safeModeAt.push(ts)
+    // Logged whenever `airlockcmd status` is run: RPC: GetAgentInfo: Server:"..."  ...  GroupParent:"Parent"  GroupName:"Group"  ...
+    else if ((mm = msg.match(/^RPC: GetAgentInfo: .*GroupParent:"([^"]*)"\s+GroupName:"([^"]*)"/))) s.policyGroups.push([mm[1], mm[2]].filter(Boolean).join(' / '))
     else if (msg.startsWith('Refreshing package:')) s.packages += 1
     else if (msg.startsWith('Adding marks to mountpoint:')) s.mountpoints += 1
     else if (msg.startsWith('Debug Logging is now enabled')) s.debugEnabled = true
@@ -308,6 +318,8 @@ export function extractAirlockSummary(text: string): Record<(typeof AIRLOCK_FIEL
     switch (key) {
       case 'Agent Starts':
         return count(stats.starts)
+      case 'Agent Stops':
+        return count(stats.stops)
       case 'Debug Logging':
         if (stats.agentLines === 0) return null
         return stats.debugLines > 0 || stats.debugEnabled ? `Yes (${stats.debugLines} debug lines)` : 'No'
@@ -366,6 +378,11 @@ export function extractAirlockSummary(text: string): Record<(typeof AIRLOCK_FIEL
         return latestOf(stats.policyIds)
       case 'Policy Updates':
         return count(stats.policyUpdates)
+      case 'Policy Group':
+        return latestOf(stats.policyGroups)
+      case 'Safe Mode':
+        if (stats.safeModeAt.length === 0) return null
+        return `Entered ${stats.safeModeAt.length} time${stats.safeModeAt.length === 1 ? '' : 's'} (last at ${stats.safeModeAt[stats.safeModeAt.length - 1]})`
       case 'Allowed Executions':
         return stats.execs > 0 ? String(stats.allowed) : null
       case 'Blocked Executions':
@@ -461,8 +478,11 @@ export function extractAirlockSummary(text: string): Record<(typeof AIRLOCK_FIEL
       case 'Audit Mode': {
         if (stats.auditModes.length > 0) {
           const last = stats.auditModes[stats.auditModes.length - 1]
-          const changed = stats.auditModes.some(a => a.value !== last.value)
-          return changed ? `${last.value} (changed from ${last.value === 'Yes' ? 'No' : 'Yes'} at ${last.ts})` : last.value
+          // Time of the most recent switch, not of the last line that repeats the current value
+          let since = stats.auditModes.length - 1
+          while (since > 0 && stats.auditModes[since - 1].value === last.value) since -= 1
+          if (since === 0) return last.value
+          return `${last.value} (changed from ${last.value === 'Yes' ? 'No' : 'Yes'} at ${stats.auditModes[since].ts})`
         }
         const m = findFirst(lines, [
           /audit\s*mode[:=\s]+(enabled|disabled|on|off|true|false)/i,
@@ -906,8 +926,10 @@ export function getAirlockFieldSearchString(key: (typeof AIRLOCK_FIELDS)[number]
     }
     case 'Agent Starts':
       return 'Starting Airlock Enforcement Agent'
+    case 'Agent Stops':
+      return 'Closing fanotify'
     case 'Debug Logging':
-      return 'Debug Logging is now'
+      return 'Debug Logging is'
     case 'Errors and Warnings':
       return '(ERROR|WARN) \\['
     case 'Agent PID':
@@ -956,6 +978,10 @@ export function getAirlockFieldSearchString(key: (typeof AIRLOCK_FIELDS)[number]
       return 'Init Policy:|policyid:'
     case 'Policy Updates':
       return 'Check In ~ Policy Update'
+    case 'Policy Group':
+      return 'GetAgentInfo'
+    case 'Safe Mode':
+      return 'Safe Mode'
     case 'Allowed Executions':
       return 'Result="(\\(CACHED\\) )?Allow'
     case 'Blocked Executions':
