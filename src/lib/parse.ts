@@ -2,7 +2,7 @@ import { LogEntry, LogLevel } from './types'
 
 // Timestamp patterns
 // ISO 8601
-const reISO = /^(\s*)(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:[.,]\d+)?(?:Z|[+-]\d{2}:\d{2}))/
+const reISO = /^(\s*)(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:[.,]\d+)?(?:Z|[+-]\d{2}:?\d{2}))/
 // YYYY-MM-DD HH:mm:ss(.SSS or ,SSS)
 const reYMD_HMS = /^(\s*)(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:[.,]\d+)?)/
 // YYYY/MM/DD HH:mm:ss(.SSS or ,SSS)
@@ -31,7 +31,8 @@ const reLevel = /(\[)?\b(ERROR|ERR|WARN|WARNING|INFO|DEBUG|TRACE)\b(\])?/i
 function parseDate(ts: string): Date | null {
   // ISO / RFC-3339
   if (/^\d{4}-\d{2}-\d{2}T/.test(ts)) {
-    const d = new Date(ts.replace(',', '.'))
+    // Offsets may come without a colon (+1000), which Date does not accept everywhere
+    const d = new Date(ts.replace(',', '.').replace(/([+-]\d{2})(\d{2})$/, '$1:$2'))
     return isNaN(d.getTime()) ? null : d
   }
   // YYYY-MM-DD HH:mm:ss(.SSS)?
@@ -143,6 +144,23 @@ function detectLevel(s: string): { level: LogLevel; idx: number; len: number } |
   return { level, idx, len }
 }
 
+// Level for formats that have no level column. Does not consume anything, so the message stays whole.
+// Lowercase "info"/"debug" are left out: they turn up in paths and settings far more often than as a level.
+const reLooseLevel = /\b(ERROR|Error|error|WARN|WARNING|Warning|warning|DEBUG|TRACE)\b/
+function looseLevel(s: string): LogLevel {
+  const m = s.match(reLooseLevel)
+  return m ? (levelMap[m[1].toUpperCase()] ?? 'INFO') : 'INFO'
+}
+
+// Airlock agent execution decisions: blocked in enforcement is an error, blocked in audit mode is a warning
+function airlockFileCheckLevel(rest: string): LogLevel {
+  const result = rest.match(/\bResult="([^"]*)"/)?.[1] ?? rest
+  if (!/\bBlock/i.test(result)) return 'INFO'
+  return /\[Audit\]/i.test(result) ? 'WARN' : 'ERROR'
+}
+
+const MONTHS = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec']
+
 export function parseLog(text: string, fileId: string = '', fileName: string = ''): LogEntry[] {
   const lines = text.replace(/\r\n?/g, '\n').split('\n')
   const out: LogEntry[] = []
@@ -195,13 +213,81 @@ export function parseLog(text: string, fileId: string = '', fileName: string = '
   // MSI (c) (1C:50) [12:16:41:491]: message
   // or MSI (s) (...) [2025-08-13 12:16:41:491]: message
   const reMSI = /^MSI\s+\(([a-z])\)\s+\(([0-9A-Fa-f:]+)\)\s+\[([^\]]+)\]:\s*(.*)$/i
+  // Airlock Enforcement Agent execution decisions, e.g.:
+  // 2026-01-05 10:00:03 FILE CHECK Filename=/usr/bin/x Hash="..." Type=2 Result="Blocking File - Untrusted Execution [Audit]" ...
+  const reAirlockFileCheck = /^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:[.,]\d+)?)\s+(FILE CHECK\s.*)$/
+  // Go standard logger with file:line, used by the Airlock server services (clientapi, cloudsvc, cdsync, extlogger, rest, trustbuilder), e.g.:
+  // 2026/01/05 10:00:00 service.go:120: POST /api/submitfile from ip: 10.0.0.5 hostname: host
+  const reGoLog = /^(\d{4}\/\d{2}\/\d{2} \d{2}:\d{2}:\d{2}(?:[.,]\d+)?) ([\w.-]+\.go:\d+): ?(.*)$/
+  // Bracketed timestamp with an optional [Tag], used by Airlock server workers (bulkexport, binchkn_inventory, index_health_check), e.g.:
+  // [2026-01-05 10:00:10] [Worker] Network error ...   or   [2026-01-05T10:00:11+10:00] Running health check
+  const reBracketTs = /^\[(\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:[.,]\d+)?(?:Z|[+-]\d{2}:?\d{2})?)\]\s*(?:\[([^\]]+)\]\s*)?(.*)$/
+  // Airlock server activity log (svractivities), e.g.:
+  // ServerActivityMessage|05/01/2026 02:40:22 PM|Login|admin|User: admin logged in successfully
+  const reAirlockActivity = /^ServerActivityMessage\|([^|]*)\|([^|]*)\|([^|]*)\|(.*)$/
+  // Phusion Passenger (nginx_error), e.g.:
+  // [ N 2026-01-05 10:00:10.0785 4321/T1 age/Cor/Example.cpp:10 ]: Checking connections ...
+  const rePassenger = /^\[ ([A-Z]) (\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d+)?) (\S+) (\S+) \]: ?(.*)$/
+  // date(1) output followed by " - message" (startup, db_seed), e.g.:
+  // Mon Jan  5 08:00:00 AEDT 2026 - starting up
+  const reUnixDate = /^([A-Z][a-z]{2} ([A-Z][a-z]{2}) +(\d{1,2}) (\d{2}):(\d{2}):(\d{2}) [A-Z]{2,5} (\d{4})) - (.*)$/
+  // Resque worker job lines have no timestamp at all, e.g.:
+  // *** got: (Job{example} | Example | [...])
+  const reResqueJob = /^\*\*\* \S/
+
+  const push = (time: Date | null, timeStr: string, level: LogLevel, source: string, message: string, raw: string) => {
+    const entry: LogEntry = { index: index++, time, timeStr, level, source, message, raw, fileId, fileName }
+    out.push(entry)
+    lastEntry = entry
+  }
 
   for (const rawLine of linesToProcess) {
     const line = rawLine.trimEnd()
     if (!line) continue
 
+    // These start with a plain timestamp, so they have to be claimed before the generic timestamp rules
+    const fc = line.match(reAirlockFileCheck)
+    if (fc) {
+      push(parseDate(fc[1]), fc[1], airlockFileCheckLevel(fc[2]), 'FILE CHECK', fc[2], rawLine)
+      continue
+    }
+    const gl = line.match(reGoLog)
+    if (gl) {
+      push(parseDate(gl[1]), gl[1], looseLevel(gl[3]), gl[2], `${gl[2]}: ${gl[3]}`, rawLine)
+      continue
+    }
+
     const ts = detectTimestamp(line)
     if (!ts) {
+      const bt = line.match(reBracketTs)
+      if (bt) {
+        const tag = bt[2] ?? ''
+        push(parseDate(bt[1]), bt[1], looseLevel(bt[3]), tag, tag ? `[${tag}] ${bt[3]}` : bt[3], rawLine)
+        continue
+      }
+      const act = line.match(reAirlockActivity)
+      if (act) {
+        const [, tsStr, category, user, msg] = act
+        push(parseDate(tsStr), tsStr, 'INFO', category, [category, user, msg].filter(Boolean).join(' | '), rawLine)
+        continue
+      }
+      const pm = line.match(rePassenger)
+      if (pm) {
+        const letterMap: Record<string, LogLevel> = { C: 'ERROR', E: 'ERROR', W: 'WARN', N: 'INFO', I: 'INFO', D: 'DEBUG' }
+        push(parseDate(pm[2]), pm[2], letterMap[pm[1]] ?? 'INFO', pm[4], `${pm[4]}: ${pm[5]}`, rawLine)
+        continue
+      }
+      const ud = line.match(reUnixDate)
+      if (ud) {
+        const mon = MONTHS.indexOf(ud[2].toLowerCase())
+        const d = mon < 0 ? null : new Date(Number(ud[7]), mon, Number(ud[3]), Number(ud[4]), Number(ud[5]), Number(ud[6]))
+        push(d && !isNaN(d.getTime()) ? d : null, ud[1], looseLevel(ud[8]), '', ud[8], rawLine)
+        continue
+      }
+      if (reResqueJob.test(line)) {
+        push(null, '', 'INFO', 'resque', line, rawLine)
+        continue
+      }
       // Try resque pattern: prefix + [LEVEL] + ISO timestamp + ':' + message
       const rm = line.match(reResque)
       if (rm) {
@@ -315,10 +401,13 @@ export function parseLog(text: string, fileId: string = '', fileName: string = '
         lastEntry = entry
         continue
       }
-      // Continuation of previous message
-      if (lastEntry) {
+      // Continuation of previous message. Lines with nothing timestamped to attach to
+      // (file headers, logs with no timestamps at all) become their own rows instead of being dropped.
+      if (lastEntry && lastEntry.timeStr) {
         lastEntry.message += '\n' + line
         lastEntry.raw += '\n' + rawLine
+      } else {
+        push(null, '', looseLevel(line), '', line, rawLine)
       }
       continue
     }
