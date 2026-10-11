@@ -19,7 +19,7 @@ docker build -t logninja .                # Node 18 build stage -> nginx:alpine 
 docker run --rm -p 8080:80 logninja
 ```
 
-There is no test runner, linter or formatter configured. `npm run build` (strict `tsc`) is the only automated check, so run it after changes. The root `test*.js` files are empty placeholders. CI (`.github/workflows/`) only runs Claude Code review on PRs; it does not build or test.
+There is no test runner, linter or formatter configured. `npm run build` (strict `tsc`) is the only automated check, so run it after changes. The root `test*.js` files are empty placeholders. CI (`.github/workflows/claude.yml`) only runs Claude when someone mentions `@claude`; it does not build or test.
 
 ## Architecture
 
