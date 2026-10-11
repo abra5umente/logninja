@@ -7,6 +7,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "airlock-summary": "node scripts/airlock-summary.mjs"
   },
   "dependencies": {
@@ -21,6 +23,7 @@
     "postcss": "^8.4.35",
     "tailwindcss": "^3.4.7",
     "typescript": "^5.4.5",
-    "vite": "^5.2.10"
+    "vite": "^5.2.10",
+    "vitest": "^3.2.7"
   }
 }

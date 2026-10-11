@@ -13,13 +13,15 @@ npm install
 npm run dev              # Vite dev server on 0.0.0.0:5173 (LAN reachable)
 npm run build            # tsc -b && vite build -> dist/
 npm run preview          # serve dist/ on 0.0.0.0
+npm test                 # run Vitest once (unit tests in src/**/*.test.ts)
+npm run test:watch       # Vitest in watch mode
 npm run airlock-summary -- path/to/airlock.0.log   # CLI: print Airlock metadata table to stdout
 
 docker build -t logninja .                # Node 18 build stage -> nginx:alpine serving dist/
 docker run --rm -p 8080:80 logninja
 ```
 
-There is no test runner, linter or formatter configured. `npm run build` (strict `tsc`) is the only automated check, so run it after changes. The root `test*.js` files are empty placeholders. CI (`.github/workflows/claude.yml`) only runs Claude when someone mentions `@claude`; it does not build or test.
+Unit tests use Vitest and sit next to the code they cover (`src/lib/parse.test.ts`, `src/lib/search.test.ts`); they cover pure logic in `src/lib/`, not React components. Run `npm test` and `npm run build` (strict `tsc`, which also type-checks the tests) after changes. There is no linter or formatter. The root `test*.js` files are empty placeholders. `.github/workflows/ci.yml` runs `npm ci`, `npm test` and `npm run build` on every PR and push to `main`; `.github/workflows/claude.yml` only runs Claude when someone mentions `@claude`.
 
 ## Architecture
 
