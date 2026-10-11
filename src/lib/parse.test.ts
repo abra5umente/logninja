@@ -48,3 +48,108 @@ describe('parseLog', () => {
     expect(entry.message).toBe('Slow query')
   })
 })
+
+// All lines below are made up to match the shape of Airlock agent and server logs; none are copied from a real system.
+describe('parseLog: Airlock agent lines', () => {
+  const blocked = (result: string) =>
+    `2026-01-05 10:00:03 FILE CHECK Filename=/usr/share/info/error Hash="${'ab'.repeat(32)} not found in the database" Type=2 Result="${result}" Blocking Reasons==> GrandParent="/usr/sbin/sshd not found in Process Exclusion" Parent="/usr/bin/bash not found in Process Exclusion" Path="/usr/share/info/error not found in Path Exclusions" Publisher="Debug Tools <warn@example.com> not found in Publisher Exclusions"`
+
+  it('keeps the whole FILE CHECK line as the message even when paths contain level words', () => {
+    const [entry] = parseLog(blocked('Blocking File - Untrusted Execution'))
+    expect(entry.time?.getTime()).toBe(new Date(2026, 0, 5, 10, 0, 3).getTime())
+    expect(entry.source).toBe('FILE CHECK')
+    expect(entry.message.startsWith('FILE CHECK Filename=/usr/share/info/error Hash=')).toBe(true)
+    expect(entry.message.endsWith('not found in Publisher Exclusions"')).toBe(true)
+  })
+
+  it('takes the FILE CHECK level from the result', () => {
+    const levels = parseLog([
+      blocked('Blocking File - Untrusted Execution'),
+      blocked('(CACHED) Blocking File - Untrusted Execution [Audit]'),
+      '2026-01-05 10:00:04 FILE CHECK Filename=/usr/bin/ls Hash="' + 'cd'.repeat(32) + ' found in the database" Type=2 Result="Allowing File"',
+    ].join('\n')).map(e => e.level)
+    expect(levels).toEqual(['ERROR', 'WARN', 'INFO'])
+  })
+
+  it('parses agent INFO and ERROR lines and skips the blank lines between them', () => {
+    const entries = parseLog([
+      '2026-01-05 10:00:01 INFO  MAXPROCS (default) = 4',
+      '',
+      '2026-01-05 10:00:02 ERROR [/build/agent/airlock/agent.go:100] Download failed: http status 400',
+    ].join('\n'))
+    expect(entries.map(e => e.level)).toEqual(['INFO', 'ERROR'])
+    expect(entries[0].message).toBe('MAXPROCS (default) = 4')
+    expect(entries[1].message).toBe('[/build/agent/airlock/agent.go:100] Download failed: http status 400')
+  })
+})
+
+describe('parseLog: Airlock server logs', () => {
+  it('parses Go service lines and keeps file:line in the message', () => {
+    const entries = parseLog([
+      '2026/01/05 10:00:00 service.go:120: POST /api/submitfile from ip: 10.0.0.5 hostname: host-a',
+      '2026/01/05 10:00:01 main.go:50: ERROR: Cannot connect to cache',
+    ].join('\n'))
+    expect(entries[0].time?.getTime()).toBe(new Date(2026, 0, 5, 10, 0, 0).getTime())
+    expect(entries[0].source).toBe('service.go:120')
+    expect(entries[0].message).toBe('service.go:120: POST /api/submitfile from ip: 10.0.0.5 hostname: host-a')
+    expect(entries.map(e => e.level)).toEqual(['INFO', 'ERROR'])
+  })
+
+  it('parses bracketed timestamps with and without a tag', () => {
+    const entries = parseLog([
+      '[2026-01-05 10:00:10] [LogMailer] Network error for \'\': connection refused',
+      '[2026-01-05T10:00:11+10:00] Running index health check',
+    ].join('\n'))
+    expect(entries[0].time?.getTime()).toBe(new Date(2026, 0, 5, 10, 0, 10).getTime())
+    expect(entries[0].source).toBe('LogMailer')
+    expect(entries[0].level).toBe('ERROR')
+    expect(entries[0].message).toBe("[LogMailer] Network error for '': connection refused")
+    expect(entries[1].time?.toISOString()).toBe('2026-01-05T00:00:11.000Z')
+    expect(entries[1].message).toBe('Running index health check')
+  })
+
+  it('parses server activity lines as day/month/year', () => {
+    const [entry] = parseLog('ServerActivityMessage|05/01/2026 02:40:22 PM|Login|admin|User: admin logged in successfully')
+    expect(entry.time?.getTime()).toBe(new Date(2026, 0, 5, 14, 40, 22).getTime())
+    expect(entry.source).toBe('Login')
+    expect(entry.message).toBe('Login | admin | User: admin logged in successfully')
+  })
+
+  it('parses Passenger lines', () => {
+    const [entry] = parseLog('[ W 2026-01-05 10:00:10.0785 4321/T1 age/Cor/Example.cpp:10 ]: Something looks off')
+    expect(entry.time?.getTime()).toBe(new Date(2026, 0, 5, 10, 0, 10, 78).getTime())
+    expect(entry.level).toBe('WARN')
+    expect(entry.message).toBe('age/Cor/Example.cpp:10: Something looks off')
+  })
+
+  it('parses date(1) style startup lines', () => {
+    const [entry] = parseLog('Mon Jan  5 08:00:00 AEDT 2026 - starting up')
+    expect(entry.time?.getTime()).toBe(new Date(2026, 0, 5, 8, 0, 0).getTime())
+    expect(entry.message).toBe('starting up')
+  })
+
+  it('parses ISO timestamps whose offset has no colon', () => {
+    const [entry] = parseLog('2026-01-05T10:29:15.123+1000\tfinished restoring airlock.things (3 documents, 0 failures)')
+    expect(entry.time?.toISOString()).toBe('2026-01-05T00:29:15.123Z')
+  })
+
+  it('keeps resque job lines, which have no timestamp, as separate rows', () => {
+    const entries = parseLog([
+      '*** got: (Job{addexe} | AddExe | ["/tmp/a.addexe"])',
+      '*** done: (Job{addexe} | AddExe | ["/tmp/a.addexe"])',
+    ].join('\n'))
+    expect(entries).toHaveLength(2)
+    expect(entries[0].time).toBeNull()
+    expect(entries[1].message).toBe('*** done: (Job{addexe} | AddExe | ["/tmp/a.addexe"])')
+  })
+
+  it('does not drop lines that come before the first timestamp', () => {
+    const entries = parseLog([
+      '=====[ cleanupdb]=====',
+      'done.',
+      '2026-01-05 10:00:00 INFO started',
+      '  continuation',
+    ].join('\n'))
+    expect(entries.map(e => e.message)).toEqual(['=====[ cleanupdb]=====', 'done.', 'started\n  continuation'])
+  })
+})

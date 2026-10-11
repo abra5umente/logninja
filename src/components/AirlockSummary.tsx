@@ -1,5 +1,5 @@
 import React from 'react'
-import { AIRLOCK_FIELDS, getAirlockFieldSearchString } from '../lib/airlockSummary'
+import { AIRLOCK_FIELDS, AIRLOCK_FIELD_GROUPS, getAirlockFieldSearchString } from '../lib/airlockSummary'
 
 export default function AirlockSummary({ data, collapsed, setCollapsed, onFilterText }: {
   data: Record<(typeof AIRLOCK_FIELDS)[number], string>
@@ -25,35 +25,40 @@ export default function AirlockSummary({ data, collapsed, setCollapsed, onFilter
               </tr>
             </thead>
             <tbody>
-              {AIRLOCK_FIELDS.map((k) => {
-                const v = data[k]
-                const clickable = v && v !== '—'
-                return (
-                  <tr key={k} className="airlock-summary-row">
-                    <td className="airlock-summary-key">{k}</td>
-                    <td className="airlock-summary-value">
-                      {clickable ? (
-                        <button
-                          className="airlock-summary-clickable"
-                          onClick={() => {
-                          const token = getAirlockFieldSearchString(k, data)
-                          // Flip regex mode when token is clearly a regex or for known regex-only fields
-                          const regexByKey = k === 'Proxy Configured' || k === 'Execution Count' || k === 'Top Executed File'
-                          const looksRegex = /^\(\?i\)/.test(token) || /[.*+?^${}()|[\]\\]/.test(token)
-                          const useRegex = regexByKey || looksRegex
-                          if (token) onFilterText(token, useRegex)
-                          }}
-                          title="Filter main table to matching lines"
-                        >
-                          {v}
-                        </button>
-                      ) : (
-                        v || '—'
-                      )}
-                    </td>
+              {AIRLOCK_FIELD_GROUPS.map((group) => (
+                <React.Fragment key={group.title}>
+                  <tr className="airlock-summary-group">
+                    <td colSpan={2}>{group.title}</td>
                   </tr>
-                )
-              })}
+                  {group.fields.map((k) => {
+                    const v = data[k]
+                    const token = v && v !== '—' ? getAirlockFieldSearchString(k, data) : ''
+                    return (
+                      <tr key={k} className="airlock-summary-row">
+                        <td className="airlock-summary-key">{k}</td>
+                        <td className="airlock-summary-value">
+                          {token ? (
+                            <button
+                              className="airlock-summary-clickable"
+                              onClick={() => {
+                                // Flip regex mode when token is clearly a regex or for known regex-only fields
+                                const regexByKey = k === 'Proxy Configured' || k === 'Execution Count' || k === 'Top Executed File'
+                                const looksRegex = /^\(\?i\)/.test(token) || /[.*+?^${}()|[\]\\]/.test(token)
+                                onFilterText(token, regexByKey || looksRegex)
+                              }}
+                              title="Filter main table to matching lines"
+                            >
+                              {v}
+                            </button>
+                          ) : (
+                            v || '—'
+                          )}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </React.Fragment>
+              ))}
             </tbody>
           </table>
         </div>
@@ -61,5 +66,3 @@ export default function AirlockSummary({ data, collapsed, setCollapsed, onFilter
     </div>
   )
 }
-
-

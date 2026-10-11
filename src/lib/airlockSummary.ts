@@ -1,29 +1,98 @@
 // Airlock Debug Summary (browser): detect by filename and extract summary fields.
 // Uses only the standard library.
 
-export const AIRLOCK_FIELDS = [
-  'Airlock Version',
-  'Proxy Configured',
-  'Primary Airlock Server',
-  'Interops Found',
-  'Interop Paths',
-  'Policy DB Loaded',
-  'Policy DB Version',
-  'Audit Mode',
-  'AutoUpdate Enabled',
-  'Powershell Constrained Mode',
-  'File Extensions Added',
-  'Publishers Loaded',
-  'Path Exclusions',
-  'Assembly Reflection Enabled',
-  'Self Service Enabled',
-  'Blocklist Metarules loaded',
-  'Allowlist Metarules loaded',
-  'Allowlist Browser Extensions loaded',
-  'Parent Processes',
-  'Execution Count',
-  'Top Executed File',
+// Fields are shown in this order, under these headings
+export const AIRLOCK_FIELD_GROUPS = [
+  {
+    title: 'Agent',
+    fields: [
+      'Airlock Version',
+      'Agent Starts',
+      'Agent Stops',
+      'Debug Logging',
+      'Log Period',
+      'Errors and Warnings',
+      'Agent PID',
+      'Agent Hash',
+      'Kernel Mode',
+      'RPC',
+      'AutoUpdate Enabled',
+      'Server Agent Version',
+    ],
+  },
+  {
+    title: 'Host',
+    fields: [
+      'Computer Name',
+      'Operating System',
+      'Kernel',
+      'CPU Cores',
+      'Logged User',
+      'Local IP Address',
+      'Machine Id',
+      'Packages Indexed',
+      'Mountpoints Monitored',
+    ],
+  },
+  {
+    title: 'Server connection',
+    fields: [
+      'Primary Airlock Server',
+      'Fallback Server',
+      'Proxy Configured',
+      'Relay',
+      'Server Connections',
+      'Check Ins',
+      'Client Id',
+    ],
+  },
+  {
+    title: 'Policy',
+    fields: [
+      'Policy DB Loaded',
+      'Policy DB Version',
+      'Hash DB Version',
+      'Policy Id',
+      'Policy Group',
+      'Policy Updates',
+      'Audit Mode',
+      'Safe Mode',
+      'Self Service Enabled',
+      'Powershell Constrained Mode',
+      'Assembly Reflection Enabled',
+      'File Extensions Added',
+      'Publishers Loaded',
+      'Path Exclusions',
+      'Parent Processes',
+      'Blocklist Metarules loaded',
+      'Allowlist Metarules loaded',
+      'Allowlist Browser Extensions loaded',
+      'Interops Found',
+      'Interop Paths',
+    ],
+  },
+  {
+    title: 'Executions',
+    fields: [
+      'Execution Count',
+      'Allowed Executions',
+      'Blocked Executions',
+      'Audit Blocks',
+      'Execution Results',
+      'Top Executed File',
+      'Top Blocked File',
+      'Top Blocked Parent',
+      'Top Blocked Publisher',
+      'Users Seen',
+      'Interop Checks',
+      'Block Notifications',
+    ],
+  },
 ] as const
+
+export type AirlockField = (typeof AIRLOCK_FIELD_GROUPS)[number]['fields'][number]
+
+export const AIRLOCK_FIELDS: readonly AirlockField[] = AIRLOCK_FIELD_GROUPS.flatMap(g => [...g.fields])
 
 export function isAirlockDebugFileName(name: string): boolean {
   // Match common Airlock debug log patterns, e.g.:
@@ -61,10 +130,281 @@ function findFirst(lines: string[], regexes: RegExp[]) {
   return null
 }
 
+function bump(map: Map<string, number>, key: string) {
+  map.set(key, (map.get(key) ?? 0) + 1)
+}
+
+function topOf(map: Map<string, number>): string | null {
+  let top: string | null = null
+  let max = 0
+  for (const [k, c] of map) if (c > max) { max = c; top = k }
+  return top ? `${top} (${max})` : null
+}
+
+// Latest value, with the earlier one when it changed during the log
+function latestOf(values: string[]): string | null {
+  if (values.length === 0) return null
+  const last = values[values.length - 1]
+  const prev = [...values].reverse().find(v => v !== last)
+  return prev ? `${last} (previously ${prev})` : last
+}
+
+// Linux agent lines: "2026-01-05 10:00:00 INFO  message", also WARN, ERROR, DEBUG and FILE CHECK
+const reAgentLine = /^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) (INFO|WARN|ERROR|DEBUG|FILE CHECK)\s+(.*)$/
+// FILE CHECK Filename=/usr/bin/ps Hash="<sha256> not found in the database" Type=1 Result="Blocking File - Blocked Execution" Blocking Reasons==> GrandParent="..." Parent="..." Path="..." Publisher="..."
+// FILE CHECK Filename=/usr/bin/cat Hash=<sha256> Type=5 Result="(CACHED) Allowing file to run - Trusted Publisher Execution"
+const reFileCheck = /^Filename=(.+?) Hash=(?:"[^"]*"|\S+) Type=\d+ Result="([^"]*)"(.*)$/
+const reGuid = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi
+
+// One pass over the Linux agent's lines, collecting everything the newer fields need
+function collectAgentStats(lines: string[]) {
+  const s = {
+    agentLines: 0,
+    starts: 0,
+    stops: 0,
+    debugLines: 0,
+    debugEnabled: false,
+    firstTs: '',
+    lastTs: '',
+    errors: 0,
+    warnings: 0,
+    pid: null as string | null,
+    agentHash: null as string | null,
+    fanotify: false,
+    driverError: false,
+    rpcSecured: null as string | null,
+    rpcPort: null as string | null,
+    serverVersion: null as string | null,
+    currentVersion: null as string | null,
+    computer: null as string | null,
+    os: null as string | null,
+    linuxFamily: null as string | null,
+    kernel: null as string | null,
+    cpu: null as string | null,
+    user: null as string | null,
+    ip: null as string | null,
+    machineId: null as string | null,
+    packages: 0,
+    mountpoints: 0,
+    fallback: null as string | null,
+    relayCount: null as string | null,
+    relayMode: null as string | null,
+    connOk: 0,
+    connFail: 0,
+    checkIns: 0,
+    clientId: null as string | null,
+    policyIds: [] as string[],
+    policyVersions: [] as string[],
+    hashDbVersions: [] as string[],
+    policyUpdates: 0,
+    policyGroups: [] as string[],
+    safeModeAt: [] as string[],
+    auditModes: [] as { value: string; ts: string }[],
+    execs: 0,
+    allowed: 0,
+    blocked: 0,
+    auditBlocked: 0,
+    results: new Map<string, number>(),
+    executed: new Map<string, number>(),
+    blockedFiles: new Map<string, number>(),
+    blockedParents: new Map<string, number>(),
+    blockedPublishers: new Map<string, number>(),
+    users: new Map<string, number>(),
+    interopChecks: 0,
+    notifications: 0,
+    allowMetarules: new Set<string>(),
+    blockMetarules: new Set<string>(),
+  }
+
+  for (const line of lines) {
+    const m = reAgentLine.exec(line)
+    if (!m) continue
+    const ts = m[1], kind = m[2], msg = m[3]
+    s.agentLines += 1
+    if (!s.firstTs) s.firstTs = ts
+    s.lastTs = ts
+
+    if (kind === 'DEBUG') {
+      s.debugLines += 1
+      let mm: RegExpMatchArray | null
+      if (msg.startsWith('Username - ')) {
+        if ((mm = msg.match(/^Username - (.+) = (\d+)$/))) bump(s.users, `${mm[1]} (UID ${mm[2]})`)
+      } else if (msg.startsWith('CheckAllowMetaRule:')) {
+        if ((mm = msg.match(/\[ ([0-9a-f-]{36}) \]/i))) s.allowMetarules.add(mm[1])
+      } else if (msg.startsWith('CheckBlocklistMetaRule:')) {
+        if ((mm = msg.match(/\[ ([0-9a-f-]{36}) \]/i))) s.blockMetarules.add(mm[1])
+      } else if (msg.startsWith('ES Notify message:')) {
+        s.notifications += 1
+      } else if (msg.startsWith('GetAPI:') || msg.startsWith('PostAPI:')) {
+        if (!s.clientId && (mm = msg.match(/\/api\/(?:gethashdb|setpolicyver|setsafemode)\/([0-9a-f-]{36})/i))) s.clientId = mm[1]
+      }
+      continue
+    }
+
+    if (kind === 'FILE CHECK') {
+      if (msg.startsWith('Filename="Interop-')) { s.interopChecks += 1; continue }
+      const fc = reFileCheck.exec(msg)
+      if (!fc) continue
+      const file = fc[1], result = fc[2].replace(/^\(CACHED\)\s*/, ''), reasons = fc[3]
+      s.execs += 1
+      bump(s.executed, file)
+      bump(s.results, result)
+      if (!/^Block/i.test(result)) { s.allowed += 1; continue }
+      if (/\[Audit\]/i.test(result)) s.auditBlocked += 1
+      else s.blocked += 1
+      bump(s.blockedFiles, file)
+      const parent = reasons.match(/ Parent="(.*?) (?:not )?found in [^"]*"/)
+      if (parent) bump(s.blockedParents, parent[1])
+      const publisher = reasons.match(/ Publisher="(.*?) (?:not )?found in [^"]*"/)
+      if (publisher) bump(s.blockedPublishers, publisher[1])
+      continue
+    }
+
+    if (kind === 'ERROR') s.errors += 1
+    else if (kind === 'WARN') s.warnings += 1
+
+    let mm: RegExpMatchArray | null
+    if (msg.startsWith('Starting Airlock Enforcement Agent')) s.starts += 1
+    else if (msg.startsWith('Closing fanotify')) s.stops += 1
+    else if (msg.includes('Setting to Safe Mode')) s.safeModeAt.push(ts)
+    // Logged whenever `airlockcmd status` is run: RPC: GetAgentInfo: Server:"..."  ...  GroupParent:"Parent"  GroupName:"Group"  ...
+    else if ((mm = msg.match(/^RPC: GetAgentInfo: .*GroupParent:"([^"]*)"\s+GroupName:"([^"]*)"/))) s.policyGroups.push([mm[1], mm[2]].filter(Boolean).join(' / '))
+    else if (msg.startsWith('Refreshing package:')) s.packages += 1
+    else if (msg.startsWith('Adding marks to mountpoint:')) s.mountpoints += 1
+    else if (msg.startsWith('Debug Logging is now enabled')) s.debugEnabled = true
+    else if ((mm = msg.match(/^Airlock PID:\s*(\d+)/))) s.pid = mm[1]
+    else if ((mm = msg.match(/^AirlockHash:\s*(\S+)/))) s.agentHash = mm[1]
+    else if (msg.startsWith('FANotify launched')) s.fanotify = true
+    else if (msg.includes('Error loading kernel driver')) s.driverError = true
+    else if ((mm = msg.match(/^RPC communication:\s*(.+)$/))) s.rpcSecured = mm[1].trim()
+    else if ((mm = msg.match(/^RPC communication at port\s*(\d+)/))) s.rpcPort = mm[1]
+    else if ((mm = msg.match(/^AutoUpdate: Version available in Server - ([\w.-]+), Current version: ([\w.-]+)/))) { s.serverVersion = mm[1]; s.currentVersion = mm[2] }
+    else if ((mm = msg.match(/^Computer Name:\s*(.+)$/))) s.computer = mm[1].trim()
+    else if ((mm = msg.match(/^OS:\s*(.+)$/))) s.os = mm[1].trim()
+    else if ((mm = msg.match(/^Linux:\s*(.+)$/))) s.linuxFamily = mm[1].trim()
+    else if ((mm = msg.match(/^Kernel:\s*(.+)$/))) s.kernel = mm[1].trim()
+    else if ((mm = msg.match(/^CPU Core Count:\s*(\d+)/))) s.cpu = mm[1]
+    else if ((mm = msg.match(/^Logged User:\s*(.+)$/))) s.user = mm[1].trim()
+    else if ((mm = msg.match(/^Local IP Address:\s*(\S+)/))) s.ip = mm[1]
+    else if ((mm = msg.match(/^Machine Id:\s*(\S+)/))) s.machineId = mm[1]
+    else if ((mm = msg.match(/^Configuration ~ Primary Airlock Server ~ (\S+) \(fallback\)/))) s.fallback = mm[1]
+    else if ((mm = msg.match(/^Relay Count =\s*(\d+)/))) s.relayCount = mm[1]
+    else if ((mm = msg.match(/^Relay Mode =\s*(.*)$/))) s.relayMode = mm[1].trim()
+    else if (msg.includes('Establish Connection ~ Connect ~')) {
+      if (msg.includes('contacted successfully')) s.connOk += 1
+      else if (msg.includes('unable to connect')) s.connFail += 1
+    }
+    else if (msg.startsWith('Check In ~ Report Status')) s.checkIns += 1
+    else if ((mm = msg.match(/^Init Policy:\s*(.+)$/))) {
+      const ids = mm[1].match(reGuid) ?? []
+      if (ids[0] && !s.clientId) s.clientId = ids[0]
+      if (ids[1]) s.policyIds.push(ids[1])
+    }
+    else if ((mm = msg.match(/Client was moved to a new policy with policyid:\s*([0-9a-f-]{36})/i))) s.policyIds.push(mm[1])
+    else if ((mm = msg.match(/Policy Update ~ Checking for new policy version the current version is (\d+)/))) s.policyVersions.push(mm[1])
+    else if ((mm = msg.match(/Policy Update ~ New policy version applied successfully, version is now (\d+)/))) { s.policyVersions.push(mm[1]); s.policyUpdates += 1 }
+    else if ((mm = msg.match(/^Current hash database version verified:\s*(\d+)/))) s.hashDbVersions.push(mm[1])
+    else if ((mm = msg.match(/Hash DB Update ~ New hash database version applied successfully, version is now (\d+)/))) s.hashDbVersions.push(mm[1])
+    else if ((mm = msg.match(/^Auditmode:\s*(true|false)/i))) s.auditModes.push({ value: mm[1].toLowerCase() === 'true' ? 'Yes' : 'No', ts })
+  }
+  return s
+}
+
 export function extractAirlockSummary(text: string): Record<(typeof AIRLOCK_FIELDS)[number], string> {
   const lines = text.replace(/\r\n?/g, '\n').split('\n')
+  const stats = collectAgentStats(lines)
+  const count = (n: number) => (n > 0 ? String(n) : null)
   const get = (key: (typeof AIRLOCK_FIELDS)[number]): string | null => {
     switch (key) {
+      case 'Agent Starts':
+        return count(stats.starts)
+      case 'Agent Stops':
+        return count(stats.stops)
+      case 'Debug Logging':
+        if (stats.agentLines === 0) return null
+        return stats.debugLines > 0 || stats.debugEnabled ? `Yes (${stats.debugLines} debug lines)` : 'No'
+      case 'Log Period':
+        return stats.firstTs ? `${stats.firstTs} to ${stats.lastTs}` : null
+      case 'Errors and Warnings':
+        if (stats.agentLines === 0) return null
+        return `${stats.errors} errors, ${stats.warnings} warnings`
+      case 'Agent PID':
+        return stats.pid
+      case 'Agent Hash':
+        return stats.agentHash
+      case 'Kernel Mode':
+        if (stats.fanotify) return stats.driverError ? 'FANotify (kernel driver did not load)' : 'FANotify'
+        return stats.driverError ? 'Kernel driver did not load' : null
+      case 'RPC':
+        if (!stats.rpcPort && !stats.rpcSecured) return null
+        return [stats.rpcSecured, stats.rpcPort ? `port ${stats.rpcPort}` : null].filter(Boolean).join(', ')
+      case 'Server Agent Version':
+        if (!stats.serverVersion) return null
+        return stats.currentVersion ? `${stats.serverVersion} (agent is ${stats.currentVersion})` : stats.serverVersion
+      case 'Computer Name':
+        return stats.computer
+      case 'Operating System':
+        if (!stats.os) return stats.linuxFamily
+        return stats.linuxFamily ? `${stats.os} (${stats.linuxFamily})` : stats.os
+      case 'Kernel':
+        return stats.kernel
+      case 'CPU Cores':
+        return stats.cpu
+      case 'Logged User':
+        return stats.user
+      case 'Local IP Address':
+        return stats.ip
+      case 'Machine Id':
+        return stats.machineId
+      case 'Packages Indexed':
+        return count(stats.packages)
+      case 'Mountpoints Monitored':
+        return count(stats.mountpoints)
+      case 'Fallback Server':
+        return stats.fallback
+      case 'Relay':
+        if (stats.relayCount == null) return null
+        return stats.relayMode ? `${stats.relayCount} (mode ${stats.relayMode})` : stats.relayCount
+      case 'Server Connections':
+        if (stats.connOk + stats.connFail === 0) return null
+        return `${stats.connOk} ok, ${stats.connFail} failed`
+      case 'Check Ins':
+        return count(stats.checkIns)
+      case 'Client Id':
+        return stats.clientId
+      case 'Hash DB Version':
+        return latestOf(stats.hashDbVersions)
+      case 'Policy Id':
+        return latestOf(stats.policyIds)
+      case 'Policy Updates':
+        return count(stats.policyUpdates)
+      case 'Policy Group':
+        return latestOf(stats.policyGroups)
+      case 'Safe Mode':
+        if (stats.safeModeAt.length === 0) return null
+        return `Entered ${stats.safeModeAt.length} time${stats.safeModeAt.length === 1 ? '' : 's'} (last at ${stats.safeModeAt[stats.safeModeAt.length - 1]})`
+      case 'Allowed Executions':
+        return stats.execs > 0 ? String(stats.allowed) : null
+      case 'Blocked Executions':
+        return stats.execs > 0 ? String(stats.blocked) : null
+      case 'Audit Blocks':
+        return stats.execs > 0 ? String(stats.auditBlocked) : null
+      case 'Execution Results':
+        if (stats.results.size === 0) return null
+        return [...stats.results].sort((a, b) => b[1] - a[1]).map(([r, c]) => `${r} (${c})`).join('\n')
+      case 'Top Blocked File':
+        return topOf(stats.blockedFiles)
+      case 'Top Blocked Parent':
+        return topOf(stats.blockedParents)
+      case 'Top Blocked Publisher':
+        return topOf(stats.blockedPublishers)
+      case 'Users Seen':
+        if (stats.users.size === 0) return null
+        return [...stats.users].sort((a, b) => b[1] - a[1]).map(([u]) => u).join(', ')
+      case 'Interop Checks':
+        return count(stats.interopChecks)
+      case 'Block Notifications':
+        return count(stats.notifications)
       case 'Airlock Version': {
         const m = findFirst(lines, [
           /Starting\s+Airlock\s+Enforcement\s+Agent\s*\(v([^)]+)\)/i,
@@ -124,6 +464,7 @@ export function extractAirlockSummary(text: string): Record<(typeof AIRLOCK_FIEL
         return m[1] ? String(normalizeBool(m[1] as any)) : 'Yes'
       }
       case 'Policy DB Version': {
+        if (stats.policyVersions.length > 0) return latestOf(stats.policyVersions)
         const m = findFirst(lines, [
           // Linux agent: explicit current version line
           /Policy\s*Update.*current\s+version\s+is\s+(\d+)/i,
@@ -135,6 +476,14 @@ export function extractAirlockSummary(text: string): Record<(typeof AIRLOCK_FIEL
         return m ? String(m[1]) : null
       }
       case 'Audit Mode': {
+        if (stats.auditModes.length > 0) {
+          const last = stats.auditModes[stats.auditModes.length - 1]
+          // Time of the most recent switch, not of the last line that repeats the current value
+          let since = stats.auditModes.length - 1
+          while (since > 0 && stats.auditModes[since - 1].value === last.value) since -= 1
+          if (since === 0) return last.value
+          return `${last.value} (changed from ${last.value === 'Yes' ? 'No' : 'Yes'} at ${stats.auditModes[since].ts})`
+        }
         const m = findFirst(lines, [
           /audit\s*mode[:=\s]+(enabled|disabled|on|off|true|false)/i,
           /Auditmode:\s*(true|false|yes|no|on|off)/i,
@@ -144,7 +493,7 @@ export function extractAirlockSummary(text: string): Record<(typeof AIRLOCK_FIEL
       case 'AutoUpdate Enabled': {
         const m = findFirst(lines, [
           /^\S*\s*AutoUpdate:\s*(true|false|yes|no|on|off)/i,
-          /(autoupdate|auto\s*update).*?(enabled|disabled|on|off|true|false)/i,
+          /(autoupdate|auto\s*update).*?\b(enabled|disabled|on|off|true|false)\b/i,
         ])
         if (!m) return null
         // Prefer the boolean value capture group
@@ -234,8 +583,8 @@ export function extractAirlockSummary(text: string): Record<(typeof AIRLOCK_FIEL
           if (mm) { uniqNames.add(mm[1].trim()); continue }
         }
         if (uniqNames.size > 0) return String(uniqNames.size)
-        // No reliable signal found
-        return null
+        // Linux 7.x does not list rules on load; debug logs name each rule as it is checked
+        return stats.blockMetarules.size > 0 ? `${stats.blockMetarules.size} (seen in rule checks)` : null
       }
       case 'Allowlist Metarules loaded': {
         // Numeric total if present
@@ -254,7 +603,8 @@ export function extractAirlockSummary(text: string): Record<(typeof AIRLOCK_FIEL
           mm = l.match(windowsNameRe)
           if (mm) { uniqNames.add(mm[1].trim()); continue }
         }
-        return uniqNames.size > 0 ? String(uniqNames.size) : null
+        if (uniqNames.size > 0) return String(uniqNames.size)
+        return stats.allowMetarules.size > 0 ? `${stats.allowMetarules.size} (seen in rule checks)` : null
       }
       case 'Allowlist Browser Extensions loaded': {
         const m = findFirst(lines, [
@@ -288,6 +638,7 @@ export function extractAirlockSummary(text: string): Record<(typeof AIRLOCK_FIEL
         return uniq.size > 0 ? String(uniq.size) : null
       }
       case 'Execution Count': {
+        if (stats.execs > 0) return String(stats.execs)
         // Linux: timestamped FILE CHECK lines indicate execs
         const execLinuxFileCheckStartRe = /^\s*\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\s+FILE\s+CHECK\s+Filename=([^\s]+)/
         // Windows: SUCCESS lines
@@ -304,6 +655,7 @@ export function extractAirlockSummary(text: string): Record<(typeof AIRLOCK_FIEL
         return total > 0 ? String(total) : null
       }
       case 'Top Executed File': {
+        if (stats.execs > 0) return topOf(stats.executed)
         const execLinuxFileCheckStartRe = /^\s*\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\s+FILE\s+CHECK\s+Filename=([^\s]+)/
         const execWinRe = /Responding\s+to\s+Kernel\s*~\s*Filename:\s*([^~\r\n]+)\s*~\s*SUCCESS/i
         // Non-debug Airlock: tab-separated FILE CHECK lines with timestamp
@@ -477,7 +829,7 @@ export function getAirlockFieldSearchString(key: (typeof AIRLOCK_FIELDS)[number]
       return '(?i)(Opening\\s+Policy\\s+database|Init\\s+Policy:)'
     }
     case 'Policy DB Version':
-      return 'Policy Version:|/api/setpolicyver/|Policy Update.*current version is'
+      return 'Policy Version:|/api/setpolicyver/|Policy Update ~ .*version is'
     case 'Audit Mode':
       return 'Auditmode:'
     case 'AutoUpdate Enabled':
@@ -500,6 +852,7 @@ export function getAirlockFieldSearchString(key: (typeof AIRLOCK_FIELDS)[number]
         const top = data['Top Executed File']
         if (top && top !== '—') {
           const fileOnly = top.replace(/\s*\(\d+\)\s*$/, '')
+          if (data[key].includes('rule checks')) return 'CheckBlocklistMetaRule:'
           if (fileOnly.startsWith('/')) return 'Loading metarules'
           if (/^[A-Za-z]:\\|^\\\\/.test(fileOnly)) return 'Loading Blocklist Metarule'
         }
@@ -513,6 +866,7 @@ export function getAirlockFieldSearchString(key: (typeof AIRLOCK_FIELDS)[number]
         const top = data['Top Executed File']
         if (top && top !== '—') {
           const fileOnly = top.replace(/\s*\(\d+\)\s*$/, '')
+          if (data[key].includes('rule checks')) return 'CheckAllowMetaRule:'
           if (fileOnly.startsWith('/')) return 'Loading ametarules'
         }
       }
@@ -537,7 +891,7 @@ export function getAirlockFieldSearchString(key: (typeof AIRLOCK_FIELDS)[number]
         const top = data['Top Executed File']
         if (top && top !== '—') {
           const fileOnly = top.replace(/\s*\(\d+\)\s*$/, '')
-          if (fileOnly.startsWith('/')) return '(?i)FILE\\s+CHECK\\s+Filename='
+          if (fileOnly.startsWith('/')) return '(?i)FILE\\s+CHECK\\s+Filename=/'
           if (/^[A-Za-z]:\\|^\\\\/.test(fileOnly)) {
             // Handle both Windows SUCCESS format and non-debug FILE CHECK format
             return '(?i)(FILE\\s+CHECK\\s+\\d+\\s+Filename:|Responding\\s+to\\s+Kernel\\s*~\\s*Filename:.*~\\s*SUCCESS)'
@@ -553,7 +907,7 @@ export function getAirlockFieldSearchString(key: (typeof AIRLOCK_FIELDS)[number]
           const top = data['Top Executed File']
           if (top && top !== '—') {
             const fileOnly = top.replace(/\s*\(\d+\)\s*$/, '')
-            if (fileOnly.startsWith('/')) return '(?i)FILE\\s+CHECK\\s+Filename='
+            if (fileOnly.startsWith('/')) return '(?i)FILE\\s+CHECK\\s+Filename=/'
             if (/^[A-Za-z]:\\|^\\\\/.test(fileOnly)) {
               // Handle both Windows SUCCESS format and non-debug FILE CHECK format
               return '(?i)(FILE\\s+CHECK\\s+\\d+\\s+Filename:|Responding\\s+to\\s+Kernel\\s*~\\s*Filename:.*~\\s*SUCCESS)'
@@ -563,13 +917,100 @@ export function getAirlockFieldSearchString(key: (typeof AIRLOCK_FIELDS)[number]
         return '(?i)FILE\\s+CHECK\\s+Filename='
       }
       const fileOnly = v.replace(/\s*\(\d+\)\s*$/, '')
-      if (fileOnly.startsWith('/')) return `(?i)FILE\\s+CHECK\\s+Filename=${escapeRegex(fileOnly)}`
+      if (fileOnly.startsWith('/')) return `(?i)FILE\\s+CHECK\\s+Filename=${escapeRegex(fileOnly)}\\s`
       // Handle both Windows SUCCESS format and non-debug FILE CHECK format
       if (/^[A-Za-z]:\\|^\\\\/.test(fileOnly)) {
         return `(?i)(FILE\\s+CHECK\\s+\\d+\\s+Filename:\\s*${escapeRegex(fileOnly)}|Responding\\s+to\\s+Kernel\\s*~\\s*Filename:\\s*${escapeRegex(fileOnly)}\\s*~\\s*SUCCESS)`
       }
       return `(?i)Responding\\s+to\\s+Kernel\\s*~\\s*Filename:\\s*${escapeRegex(fileOnly)}\\s*~\\s*SUCCESS`
     }
+    case 'Agent Starts':
+      return 'Starting Airlock Enforcement Agent'
+    case 'Agent Stops':
+      return 'Closing fanotify'
+    case 'Debug Logging':
+      return 'Debug Logging is'
+    case 'Errors and Warnings':
+      return '(ERROR|WARN) \\['
+    case 'Agent PID':
+      return 'Airlock PID:'
+    case 'Agent Hash':
+      return 'AirlockHash:'
+    case 'Kernel Mode':
+      return 'INFO (Launching )?FANotify|kernel driver'
+    case 'RPC':
+      return 'RPC communication'
+    case 'Server Agent Version':
+      return 'AutoUpdate:'
+    case 'Computer Name':
+      return 'Computer Name:'
+    case 'Operating System':
+      return 'INFO (OS|Linux): '
+    case 'Kernel':
+      return 'INFO Kernel:'
+    case 'CPU Cores':
+      return 'CPU Core Count:'
+    case 'Logged User':
+      return 'Logged User:'
+    case 'Local IP Address':
+      return 'Local IP Address:'
+    case 'Machine Id':
+      return 'Machine Id:'
+    case 'Packages Indexed':
+      return 'Refreshing package:'
+    case 'Mountpoints Monitored':
+      return 'Adding marks to mountpoint:'
+    case 'Fallback Server':
+      return '\\(fallback\\)'
+    case 'Relay':
+      return 'Relay Count|Relay Mode'
+    case 'Server Connections':
+      return 'Establish Connection ~ Connect'
+    case 'Check Ins':
+      return 'Check In ~ Report Status'
+    case 'Client Id': {
+      const v = data && data[key]
+      return v && v !== '—' ? v : ''
+    }
+    case 'Hash DB Version':
+      return 'hash database version|Hash DB Update'
+    case 'Policy Id':
+      return 'Init Policy:|policyid:'
+    case 'Policy Updates':
+      return 'Check In ~ Policy Update'
+    case 'Policy Group':
+      return 'GetAgentInfo'
+    case 'Safe Mode':
+      return 'Safe Mode'
+    case 'Allowed Executions':
+      return 'Result="(\\(CACHED\\) )?Allow'
+    case 'Blocked Executions':
+      return 'Result="(\\(CACHED\\) )?Block[^"\\[]*"'
+    case 'Audit Blocks':
+      return '\\[Audit\\]"'
+    case 'Execution Results':
+      return 'FILE CHECK Filename=/'
+    case 'Top Blocked File': {
+      const v = data && data[key]
+      if (!v || v === '—') return ''
+      return `FILE CHECK Filename=${escapeRegex(v.replace(/\s*\(\d+\)\s*$/, ''))}\\s.*Result="(\\(CACHED\\) )?Block`
+    }
+    case 'Top Blocked Parent': {
+      const v = data && data[key]
+      if (!v || v === '—') return ''
+      return `\\sParent="${escapeRegex(v.replace(/\s*\(\d+\)\s*$/, ''))} (not )?found`
+    }
+    case 'Top Blocked Publisher': {
+      const v = data && data[key]
+      if (!v || v === '—') return ''
+      return `Publisher="${escapeRegex(v.replace(/\s*\(\d+\)\s*$/, ''))} (not )?found`
+    }
+    case 'Users Seen':
+      return 'Username - '
+    case 'Interop Checks':
+      return 'Filename="Interop-'
+    case 'Block Notifications':
+      return 'ES Notify message'
     default:
       return ''
   }
