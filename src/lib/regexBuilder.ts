@@ -1,132 +1,197 @@
 /**
- * Regex builder types and utilities for constructing regex patterns visually
+ * Query builder: turns a list of plain-language terms into one search regex.
+ *
+ * A query is a set of terms the line must have ("any" or "all" of them) plus
+ * terms it must not have. Text terms are matched literally except `*`, which
+ * matches anything on the same line; regex terms are used as written.
+ *
+ * The pattern matches the wanted terms themselves, so they get highlighted,
+ * and puts the "all of" / "none of" checks in a lookbehind anchored at the
+ * start of the searched text: `(?:a|b)(?<=^(?=…a)(?=…b)(?!…x)[\s\S]*)`.
  */
 
-import { escapeRegExp as escapeRegex } from './search'
-import { buildSearchRegex } from './search'
+import { escapeRegExp, buildSearchRegex } from './search'
 
-export type SegmentType = 'literal' | 'wildcard' | 'not' | 'custom'
+export type TermKind = 'text' | 'regex'
+export type MatchMode = 'any' | 'all'
 
-export interface RegexSegment {
+export interface QueryTerm {
   id: string
-  type: SegmentType
   value: string
-  description?: string
+  kind: TermKind
 }
 
-// Counter for generating unique segment IDs
-let segmentIdCounter = 0
-
-/**
- * Converts a segment to its regex pattern representation
- */
-export function segmentToPattern(segment: RegexSegment): string {
-  switch (segment.type) {
-    case 'literal':
-      return escapeRegex(segment.value)
-
-    case 'wildcard':
-      // Match anything (non-greedy by default for better control)
-      return '.*?'
-
-    case 'not': {
-      // Negative lookahead pattern
-      // Improved to handle both single words and path segments better
-      const escaped = escapeRegex(segment.value)
-
-      // If value contains spaces or special chars, use a more flexible pattern
-      if (/\s/.test(segment.value)) {
-        // For multi-word exclusions: negative lookahead + match any non-slash/non-newline chars
-        return `(?!${escaped})[^\\/\\r\\n]+`
-      }
-
-      // For single words/path segments: negative lookahead + word boundary + word chars
-      // This works better for path components like "NOT abc" in "C:/Program Files/xyz/"
-      return `(?!${escaped}(?:\\/|\\s|$))[^\\/\\s]+`
-    }
-
-    case 'custom':
-      // User-provided pattern (no escaping)
-      return segment.value
-
-    default:
-      return escapeRegex(segment.value)
-  }
+export interface BuilderQuery {
+  mode: MatchMode
+  include: QueryTerm[]
+  exclude: QueryTerm[]
 }
 
-/**
- * Builds a complete regex pattern from an array of segments
- * Returns empty string if validation fails
- */
-export function buildRegexFromSegments(segments: RegexSegment[]): string {
-  // Filter out invalid segments
-  const validSegments = segments.filter(s => validateSegment(s).valid)
+const MAX_PATTERN_LENGTH = 1000
+const MAX_REGEX_TERM_LENGTH = 500
 
-  if (validSegments.length === 0) return ''
+let termIdCounter = 0
 
-  const pattern = validSegments.map(segmentToPattern).join('')
-
-  // Validate the complete pattern for ReDoS risks using existing validation
-  const validation = buildSearchRegex(pattern, true)
-
-  return validation.re ? pattern : ''
+export function createTerm(value = '', kind: TermKind = 'text'): QueryTerm {
+  return { id: `term-${++termIdCounter}`, value, kind }
 }
 
-/**
- * Validates a segment value based on its type
- */
-export function validateSegment(segment: RegexSegment): { valid: boolean; error?: string } {
-  if (!segment.value && segment.type !== 'wildcard') {
-    return { valid: false, error: 'Value cannot be empty' }
-  }
+export function emptyQuery(): BuilderQuery {
+  return { mode: 'any', include: [createTerm()], exclude: [] }
+}
 
-  if (segment.type === 'custom') {
-    // Check for basic syntax errors
-    try {
-      new RegExp(segment.value)
-    } catch (e) {
-      return { valid: false, error: 'Invalid regex pattern' }
+function isBlank(term: QueryTerm): boolean {
+  return term.value.trim() === ''
+}
+
+/** Strips PCRE-style (?i), which the search adds as a flag anyway */
+function stripInlineFlags(s: string): string {
+  return s.replace(/\(\?i\)/gi, '')
+}
+
+export function termToPattern(term: QueryTerm): string {
+  if (term.kind === 'regex') return `(?:${stripInlineFlags(term.value)})`
+  // Escape everything, then turn each run of escaped * back into "anything"
+  return escapeRegExp(term.value).replace(/(?:\\\*)+/g, '.*?')
+}
+
+export function validateTerm(term: QueryTerm): { valid: boolean; error?: string } {
+  if (isBlank(term)) return { valid: false, error: 'empty' }
+
+  if (term.kind === 'text') {
+    if (term.value.replace(/[*\s]/g, '') === '') {
+      return { valid: false, error: 'needs some text besides *' }
     }
-
-    // Check for patterns that could cause catastrophic backtracking
-    if (
-      segment.value.includes('.*.*') ||
-      segment.value.includes('++') ||
-      segment.value.includes('**') ||
-      /(\(.*\))[+*]\1/.test(segment.value) // Nested quantifiers like (a+)+
-    ) {
-      return {
-        valid: false,
-        error: 'Pattern may cause performance issues (ReDoS)',
-      }
-    }
-
-    // Warn if pattern is very long
-    if (segment.value.length > 500) {
-      return { valid: false, error: 'Pattern too long (max 500 chars)' }
-    }
-
     return { valid: true }
   }
 
+  const value = stripInlineFlags(term.value)
+  if (value.length > MAX_REGEX_TERM_LENGTH) {
+    return { valid: false, error: `too long (max ${MAX_REGEX_TERM_LENGTH} characters)` }
+  }
+  try {
+    new RegExp(value)
+  } catch {
+    return { valid: false, error: 'not a valid regex' }
+  }
+  if (
+    value.includes('.*.*') ||
+    value.includes('++') ||
+    value.includes('**') ||
+    /(\(.*\))[+*]\1/.test(value)
+  ) {
+    return { valid: false, error: 'could be very slow (nested repeats)' }
+  }
   return { valid: true }
 }
 
-/**
- * Creates a default segment with unique counter-based ID
- */
-export function createSegment(type: SegmentType = 'literal', value: string = ''): RegexSegment {
-  return {
-    id: `segment-${++segmentIdCounter}`,
-    type,
-    value,
-  }
+export interface BuildResult {
+  pattern: string
+  error?: string
 }
 
 /**
- * Parses text into an initial literal segment
+ * Builds the search pattern. Blank terms are ignored; an invalid term makes
+ * the whole query invalid so a half-typed regex never reaches the search.
  */
-export function parseInitialText(text: string): RegexSegment[] {
-  if (!text) return []
-  return [createSegment('literal', text)]
+export function buildPattern(query: BuilderQuery): BuildResult {
+  const include = query.include.filter(t => !isBlank(t))
+  const exclude = query.exclude.filter(t => !isBlank(t))
+
+  for (const t of [...include, ...exclude]) {
+    const v = validateTerm(t)
+    if (!v.valid) return { pattern: '', error: `"${t.value}": ${v.error}` }
+  }
+  if (include.length === 0 && exclude.length === 0) return { pattern: '' }
+
+  const inc = include.map(termToPattern)
+  const exc = exclude.map(termToPattern)
+
+  let guard = ''
+  if (query.mode === 'all' && inc.length > 1) {
+    guard += inc.map(p => `(?=[\\s\\S]*?${p})`).join('')
+  }
+  if (exc.length > 0) {
+    guard += `(?![\\s\\S]*?(?:${exc.join('|')}))`
+  }
+
+  let pattern: string
+  if (inc.length === 0) {
+    // Only exclusions: an empty match at the start of every line that has none of them
+    pattern = `^${guard}`
+  } else {
+    const core = inc.length === 1 ? inc[0] : `(?:${inc.join('|')})`
+    pattern = guard ? `${core}(?<=^${guard}[\\s\\S]*)` : inc.join('|')
+  }
+
+  if (pattern.length > MAX_PATTERN_LENGTH) {
+    return { pattern: '', error: `query is too long (max ${MAX_PATTERN_LENGTH} characters of regex)` }
+  }
+  if (!buildSearchRegex(pattern, true).re) {
+    return { pattern: '', error: 'the search would reject this pattern' }
+  }
+  return { pattern }
+}
+
+const REGEX_META = /[\\^$.*+?()[\]{}]/
+
+/** Splits on | that isn't escaped or inside a group or character class */
+function splitTopLevelAlternation(s: string): string[] | null {
+  const parts: string[] = []
+  let depth = 0
+  let inClass = false
+  let start = 0
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i]
+    if (c === '\\') { i++; continue }
+    if (inClass) { if (c === ']') inClass = false; continue }
+    if (c === '[') inClass = true
+    else if (c === '(') depth++
+    else if (c === ')') depth--
+    else if (c === '|' && depth === 0) { parts.push(s.slice(start, i)); start = i + 1 }
+    if (depth < 0) return null
+  }
+  parts.push(s.slice(start))
+  return parts
+}
+
+/** True when the outer ( ) wrap the whole string as one group */
+function isWrappedInGroup(s: string): boolean {
+  if (!s.startsWith('(') || !s.endsWith(')') || s.startsWith('(?')) return false
+  let depth = 0
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i]
+    if (c === '\\') { i++; continue }
+    if (c === '(') depth++
+    else if (c === ')') { depth--; if (depth === 0 && i < s.length - 1) return false }
+  }
+  return depth === 0
+}
+
+/**
+ * Turns whatever is in the search box into a starting point for the builder.
+ * A regex made only of plain words joined by | (like the presets) becomes one
+ * text term per word; any other regex becomes a single regex term.
+ */
+export function queryFromSearch(search: string, useRegex: boolean): BuilderQuery {
+  const q = search.trim()
+  if (!q) return emptyQuery()
+  if (!useRegex) return { mode: 'any', include: [createTerm(q)], exclude: [] }
+
+  let body = stripInlineFlags(q)
+  if (isWrappedInGroup(body)) body = body.slice(1, -1)
+  const parts = splitTopLevelAlternation(body)
+  if (parts && parts.length > 1 && parts.every(p => p.trim() && !REGEX_META.test(p))) {
+    return { mode: 'any', include: parts.map(p => createTerm(p)), exclude: [] }
+  }
+  return { mode: 'any', include: [createTerm(q, 'regex')], exclude: [] }
+}
+
+/** Fresh ids, so an opened copy never shares term ids with another one */
+export function cloneQuery(query: BuilderQuery): BuilderQuery {
+  return {
+    mode: query.mode,
+    include: query.include.map(t => createTerm(t.value, t.kind)),
+    exclude: query.exclude.map(t => createTerm(t.value, t.kind)),
+  }
 }

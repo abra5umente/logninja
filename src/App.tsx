@@ -722,6 +722,7 @@ export default function App() {
                     totalMatches={matchingIndices.length}
                     onNextMatch={goToNextMatch}
                     onPrevMatch={goToPreviousMatch}
+                    entries={entries}
                     ref={searchInputRef}
                   />
                   <PresetsDropdown onSelect={(pattern) => setFilters(f => ({ ...f, query: pattern, useRegex: true }))} />

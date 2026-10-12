@@ -1,4 +1,5 @@
 import React from 'react'
+import { useSavedQueries } from '../lib/savedQueries'
 
 type Preset = { label: string; pattern: string }
 
@@ -12,7 +13,11 @@ interface Props {
   onSelect: (pattern: string) => void
 }
 
+// Option values are "preset:<i>" / "saved:<id>" so two entries with the same
+// regex stay distinct.
 export default function PresetsDropdown({ onSelect }: Props) {
+  const saved = useSavedQueries()
+
   return (
     <div className="flex items-center gap-2">
       <label className="lbl">presets</label>
@@ -21,14 +26,29 @@ export default function PresetsDropdown({ onSelect }: Props) {
         defaultValue=""
         onChange={(e) => {
           const v = e.target.value
-          if (v) onSelect(v)
           e.currentTarget.value = ''
+          if (v.startsWith('preset:')) {
+            const p = PRESETS[Number(v.slice(7))]
+            if (p) onSelect(p.pattern)
+          } else if (v.startsWith('saved:')) {
+            const s = saved.find(x => x.id === v.slice(6))
+            if (s) onSelect(s.pattern)
+          }
         }}
       >
         <option value="" disabled>choose…</option>
-        {PRESETS.map(p => (
-          <option key={p.label} value={p.pattern}>{p.label}</option>
-        ))}
+        {saved.length > 0 && (
+          <optgroup label="my saved queries">
+            {saved.map(s => (
+              <option key={s.id} value={`saved:${s.id}`}>{s.name}</option>
+            ))}
+          </optgroup>
+        )}
+        <optgroup label="built-in">
+          {PRESETS.map((p, i) => (
+            <option key={p.label} value={`preset:${i}`}>{p.label}</option>
+          ))}
+        </optgroup>
       </select>
     </div>
   )
