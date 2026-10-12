@@ -1,30 +1,29 @@
 import React, { useState, useEffect } from 'react'
 import CreditsModal from './CreditsModal'
+import GroupHeading from './GroupHeading'
+import { PALETTES, PALETTE_LABELS, Palette, Scheme, SchemePref } from '../lib/theme'
 
 interface SettingsSidebarProps {
     open: boolean
     onClose: () => void
-    theme: 'light' | 'dark'
-    setTheme: (theme: 'light' | 'dark') => void
-    accent: string
-    setAccent: (accent: string) => void
+    palette: Palette
+    setPalette: (palette: Palette) => void
+    schemePref: SchemePref
+    setSchemePref: (pref: SchemePref) => void
+    // The light/dark scheme in effect, used for the palette swatches
+    scheme: Scheme
 }
 
-const accentColors = [
-    { label: 'Sage Green', value: '#9CAF88' },
-    { label: 'Teal', value: '#14B8A6' },
-    { label: 'Slate Blue', value: '#64748B' },
-    { label: 'Dusty Rose', value: '#E5B8B8' },
-    { label: 'Warm Amber', value: '#F59E0B' }
-]
+const SCHEMES: SchemePref[] = ['system', 'light', 'dark']
 
 export default function SettingsSidebar({
     open,
     onClose,
-    theme,
-    setTheme,
-    accent,
-    setAccent
+    palette,
+    setPalette,
+    schemePref,
+    setSchemePref,
+    scheme
 }: SettingsSidebarProps) {
     const [creditsOpen, setCreditsOpen] = useState(false)
 
@@ -41,12 +40,12 @@ export default function SettingsSidebar({
         window.addEventListener('keydown', handleEsc)
         return () => window.removeEventListener('keydown', handleEsc)
     }, [open, onClose])
-    
+
     return (
         <>
             {/* Backdrop */}
             <div
-                className={`fixed inset-0 z-40 bg-black/30 transition-opacity ${open ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+                className={`fixed inset-0 z-40 scrim transition-opacity ${open ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
                     }`}
                 onClick={onClose}
                 aria-hidden="true"
@@ -54,25 +53,25 @@ export default function SettingsSidebar({
 
             {/* Sidebar */}
             <aside
-                className={`fixed right-0 top-0 z-50 h-full w-[320px] sm:w-[360px] bg-white dark:bg-gray-800 shadow-xl border-l border-gray-200 dark:border-gray-700 transform transition-transform duration-300 flex flex-col ${open ? 'translate-x-0' : 'translate-x-full'
+                className={`fixed right-0 top-0 z-50 h-full w-[320px] sm:w-[360px] bg-surface border-l border-line-strong transform transition-transform duration-300 flex flex-col ${open ? 'translate-x-0' : 'translate-x-full'
                     }`}
                 role="dialog"
                 aria-modal="true"
                 aria-label="Settings"
             >
                 {/* Header */}
-                <div className="p-4 border-b border-gray-200 dark:border-gray-700">
-                    <div className="flex items-center justify-between">
+                <div className="p-4 border-b border-line">
+                    <div className="flex items-start justify-between gap-3">
                         <div>
-                            <h2 className="text-lg font-semibold" style={{ color: 'var(--accent)' }}>
-                                Settings
+                            <h2 className="font-extrabold text-accent">
+                                settings
                             </h2>
-                            <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                                Client-side log viewer with search and filters
+                            <p className="text-xs text-muted mt-1">
+                                client-side log viewer with search and filters
                             </p>
                         </div>
                         <button
-                            className="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700"
+                            className="btn subtle !p-1.5"
                             onClick={onClose}
                             aria-label="Close settings"
                             title="Close"
@@ -81,7 +80,7 @@ export default function SettingsSidebar({
                                 xmlns="http://www.w3.org/2000/svg"
                                 viewBox="0 0 20 20"
                                 fill="currentColor"
-                                className="w-5 h-5"
+                                className="w-4 h-4"
                             >
                                 <path
                                     fillRule="evenodd"
@@ -97,51 +96,50 @@ export default function SettingsSidebar({
                 <div className="p-4 space-y-6 overflow-y-auto flex-1">
                     {/* Appearance Section */}
                     <section>
-                        <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                            Appearance
-                        </h3>
-                        <div className="flex items-center gap-3">
-                            <button
-                                onClick={() => setTheme('light')}
-                                className={`flex-1 px-3 py-2 rounded border text-sm ${theme === 'light'
-                                        ? 'border-[var(--accent)] text-[var(--accent)]'
-                                        : 'border-gray-300 dark:border-gray-600'
-                                    }`}
-                            >
-                                Light
-                            </button>
-                            <button
-                                onClick={() => setTheme('dark')}
-                                className={`flex-1 px-3 py-2 rounded border text-sm ${theme === 'dark'
-                                        ? 'border-[var(--accent)] text-[var(--accent)]'
-                                        : 'border-gray-300 dark:border-gray-600'
-                                    }`}
-                            >
-                                Dark
-                            </button>
+                        <GroupHeading title="appearance" />
+                        <div className="seg full" role="radiogroup" aria-label="Light or dark">
+                            {SCHEMES.map(s => (
+                                <button
+                                    key={s}
+                                    className={schemePref === s ? 'on' : ''}
+                                    onClick={() => setSchemePref(s)}
+                                    role="radio"
+                                    aria-checked={schemePref === s}
+                                    title={s === 'system' ? 'Follow your device setting' : undefined}
+                                >
+                                    {s}
+                                </button>
+                            ))}
                         </div>
                     </section>
 
-                    {/* Accent Section */}
+                    {/* Palette Section */}
                     <section>
-                        <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                            Accent
-                        </h3>
-                        <div className="flex flex-wrap gap-3">
-                            {accentColors.map((color) => (
+                        <GroupHeading title="palette" />
+                        <div className="flex flex-col gap-1.5" role="radiogroup" aria-label="Palette">
+                            {PALETTES.map(p => (
                                 <button
-                                    key={color.value}
-                                    onClick={() => setAccent(color.value)}
-                                    className={`relative h-9 w-9 rounded-full border-2 transition ${accent === color.value
-                                            ? 'border-[var(--accent)]'
-                                            : 'border-transparent'
-                                        } focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[var(--accent)]`}
-                                    style={{ backgroundColor: color.value }}
-                                    aria-label={`${color.label} accent`}
+                                    key={p}
+                                    onClick={() => setPalette(p)}
+                                    role="radio"
+                                    aria-checked={palette === p}
+                                    className={`flex items-center gap-3 px-2.5 py-2 rounded-inner border text-left transition-colors ${palette === p
+                                        ? 'border-accent bg-accent/10'
+                                        : 'border-line hover:border-line-strong'
+                                        }`}
                                 >
-                                    {accent === color.value && (
-                                        <span className="absolute inset-0 rounded-full ring-2 ring-white dark:ring-black" />
-                                    )}
+                                    {/* The swatch carries its own data-theme, so it shows that palette's colours */}
+                                    <span
+                                        data-theme={p}
+                                        data-scheme={scheme}
+                                        className="flex items-center gap-1 px-1.5 py-1 rounded-chip border border-line bg-bg"
+                                        aria-hidden="true"
+                                    >
+                                        {['--accent', '--magenta', '--cyan', '--green', '--yellow', '--red'].map(v => (
+                                            <span key={v} className="block w-2.5 h-2.5 rounded-full" style={{ background: `var(${v})` }} />
+                                        ))}
+                                    </span>
+                                    <span className={palette === p ? 'text-fg font-semibold' : 'text-muted'}>{PALETTE_LABELS[p]}</span>
                                 </button>
                             ))}
                         </div>
@@ -149,46 +147,40 @@ export default function SettingsSidebar({
 
                     {/* Keymap Section */}
                     <section>
-                        <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                            Keymap
-                        </h3>
-                        <ul className="space-y-2 text-sm">
+                        <GroupHeading title="keymap" />
+                        <ul className="space-y-2 text-xs">
                             <li className="flex items-center justify-between">
-                                <span className="text-gray-600 dark:text-gray-300">Focus Search</span>
-                                <kbd className="px-2 py-1 rounded bg-gray-100 dark:bg-gray-700 border border-gray-200 dark:border-gray-600">
-                                    /
-                                </kbd>
+                                <span className="text-muted">focus search</span>
+                                <kbd>/</kbd>
                             </li>
                             <li className="flex items-center justify-between">
-                                <span className="text-gray-600 dark:text-gray-300">Command Palette</span>
+                                <span className="text-muted">command palette</span>
                                 <span className="space-x-1">
-                                    <kbd className="px-2 py-1 rounded bg-gray-100 dark:bg-gray-700 border border-gray-200 dark:border-gray-600">
-                                        Ctrl
-                                    </kbd>
-                                    <span className="text-gray-400">/</span>
-                                    <kbd className="px-2 py-1 rounded bg-gray-100 dark:bg-gray-700 border border-gray-200 dark:border-gray-600">
-                                        Cmd
-                                    </kbd>
-                                    <span className="ml-1">+</span>
-                                    <kbd className="ml-1 px-2 py-1 rounded bg-gray-100 dark:bg-gray-700 border border-gray-200 dark:border-gray-600">
-                                        K
-                                    </kbd>
+                                    <kbd>ctrl</kbd>
+                                    <span className="text-muted">/</span>
+                                    <kbd>cmd</kbd>
+                                    <span className="text-muted">+</span>
+                                    <kbd>k</kbd>
                                 </span>
                             </li>
                             <li className="flex items-center justify-between">
-                                <span className="text-gray-600 dark:text-gray-300">Copy Selected Row</span>
-                                <span>
-                                    <kbd className="px-2 py-1 rounded bg-gray-100 dark:bg-gray-700 border border-gray-200 dark:border-gray-600">
-                                        Ctrl
-                                    </kbd>
-                                    <span className="mx-1">/</span>
-                                    <kbd className="px-2 py-1 rounded bg-gray-100 dark:bg-gray-700 border border-gray-200 dark:border-gray-600">
-                                        Cmd
-                                    </kbd>
-                                    <span className="ml-1">+</span>
-                                    <kbd className="px-2 py-1 rounded bg-gray-100 dark:bg-gray-700 border border-gray-200 dark:border-gray-600">
-                                        C
-                                    </kbd>
+                                <span className="text-muted">copy selected row</span>
+                                <span className="space-x-1">
+                                    <kbd>ctrl</kbd>
+                                    <span className="text-muted">/</span>
+                                    <kbd>cmd</kbd>
+                                    <span className="text-muted">+</span>
+                                    <kbd>c</kbd>
+                                </span>
+                            </li>
+                            <li className="flex items-center justify-between">
+                                <span className="text-muted">next / previous match</span>
+                                <span className="space-x-1">
+                                    <kbd>enter</kbd>
+                                    <span className="text-muted">/</span>
+                                    <kbd>shift</kbd>
+                                    <span className="text-muted">+</span>
+                                    <kbd>enter</kbd>
                                 </span>
                             </li>
                         </ul>
@@ -196,27 +188,24 @@ export default function SettingsSidebar({
                 </div>
 
                 {/* Footer */}
-                <div className="p-4 border-t border-gray-200 dark:border-gray-700 flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                        <a
-                            href="https://github.com/abra5umente/logninja"
-                            target="_blank"
-                            rel="noreferrer"
-                            className="text-sm font-medium"
-                            style={{ color: 'var(--accent)' }}
-                        >
-                            Logninja v1.0.0-1 - GitHub
-                        </a>
-                        <button
-                            onClick={() => setCreditsOpen(true)}
-                            className="text-xs text-gray-500 hover:text-[var(--accent)] transition-colors"
-                        >
-                            Credits
-                        </button>
-                    </div>
+                <div className="p-4 border-t border-line flex items-center justify-between">
+                    <a
+                        href="https://github.com/abra5umente/logninja"
+                        target="_blank"
+                        rel="noreferrer"
+                        className="link !text-xs"
+                    >
+                        logninja v1.0.0-1 on github
+                    </a>
+                    <button
+                        onClick={() => setCreditsOpen(true)}
+                        className="link !text-xs !text-muted hover:!text-accent"
+                    >
+                        credits
+                    </button>
                 </div>
             </aside>
-            
+
             {/* Credits Modal */}
             <CreditsModal open={creditsOpen} onClose={() => setCreditsOpen(false)} />
         </>

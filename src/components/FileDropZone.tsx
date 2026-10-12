@@ -111,32 +111,27 @@ export default function FileDropZone({ onText }: Props) {
       onDragOver={(e) => { e.preventDefault(); setIsDragging(true) }}
       onDragLeave={() => setIsDragging(false)}
       onDrop={onDrop}
-      className={`w-full border-2 ${isDragging ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/30' : 'border-dashed border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800'} rounded-md p-4 flex items-center justify-between gap-3`}
+      className={`w-full border-2 border-dashed ${isDragging ? 'border-accent bg-accent/10' : 'border-line-strong bg-bg/45'} rounded-panel p-4 flex items-center justify-between gap-3`}
     >
       <div className="flex items-center gap-3">
-        <div className="text-gray-600 dark:text-gray-300">
-          <div className="font-medium">
-            {isLoading ? 'Loading files...' : 'Drag & drop log files (multiple supported)'}
+        <div>
+          <div className="font-semibold">
+            {isLoading ? 'loading files…' : 'drag & drop log files (multiple supported)'}
           </div>
-          <div className="text-xs text-gray-500 dark:text-gray-400">Accepted: .log, .txt, .csv</div>
-          {error && <div className="text-xs text-red-600 dark:text-red-400 mt-1">{error}</div>}
+          <div className="text-xs text-muted">.log, .txt or .csv</div>
+          {error && <div className="error mt-2 text-xs"><span className="kao">(╥﹏╥)</span>{error}</div>}
         </div>
       </div>
       <div className="flex items-center gap-2">
         {isLoading && (
-          <div className="text-sm text-gray-500 dark:text-gray-400 flex items-center gap-2">
-            <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-            </svg>
-          </div>
+          <span className="kao">(￣～￣;)</span>
         )}
         <button
-          className="px-3 py-2 text-sm text-white rounded transition-colors bg-[var(--accent)] hover:brightness-90 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="btn primary"
           onClick={() => inputRef.current?.click()}
           disabled={isLoading}
         >
-          Browse…
+          browse…
         </button>
         <input ref={inputRef} type="file" accept={accept} multiple className="hidden" onChange={onBrowse} disabled={isLoading} />
       </div>

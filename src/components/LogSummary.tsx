@@ -1,5 +1,8 @@
 import React from 'react'
 import { LogEntry, LogLevel } from '../lib/types'
+import GroupHeading from './GroupHeading'
+import { meter } from '../lib/meter'
+import { levelColorVar, levelTextClass } from '../lib/levelColors'
 
 interface Props {
   entries: LogEntry[]
@@ -63,74 +66,54 @@ export default function LogSummary({ entries, fileName, loadTime }: Props) {
     return `${seconds}s`
   }
 
+  const levels = (['ERROR', 'WARN', 'INFO', 'DEBUG', 'TRACE', 'UNKNOWN'] as LogLevel[]).filter(l => (levelCounts[l] || 0) > 0)
+  const counted = entriesToProcess.length
+
   return (
-    <div className="border border-gray-200 dark:border-gray-700 rounded-md overflow-hidden bg-white dark:bg-gray-800 mb-3">
-      <div className="px-3 py-2 bg-gray-100 dark:bg-gray-700 border-b border-gray-200 dark:border-gray-700">
-        <div className="text-sm font-semibold text-gray-800 dark:text-gray-100">
-          Log Summary
+    <section className="glass card">
+      <GroupHeading title="log summary" />
+      <div className="stats mb-3">
+        <div className="stat">
+          <div className="num">{entries.length.toLocaleString()}</div>
+          <div className="lbl">lines</div>
         </div>
+        <div className={`stat ${(levelCounts.ERROR || 0) > 0 ? 'hl' : ''}`}>
+          <div className="num">{(levelCounts.ERROR || 0).toLocaleString()}</div>
+          <div className="lbl">errors</div>
+        </div>
+        {timeRange && (
+          <div className="stat">
+            <div className="num">{formatDuration()}</div>
+            <div className="lbl">span</div>
+          </div>
+        )}
       </div>
-      <div className="overflow-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="bg-gray-50 dark:bg-gray-700">
-              <th className="px-3 py-2 text-left font-semibold text-gray-700 dark:text-gray-300">Metric</th>
-              <th className="px-3 py-2 text-left font-semibold text-gray-700 dark:text-gray-300">Value</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr className="border-b border-gray-100 dark:border-gray-700">
-              <td className="px-3 py-2 text-gray-600 dark:text-gray-400">Total Lines</td>
-              <td className="px-3 py-2 font-mono">
-                {entries.length.toLocaleString()}
-                {entries.length > maxEntriesForSummary && (
-                  <span className="text-amber-600 dark:text-amber-400 ml-2">
-                    (summary based on first {maxEntriesForSummary.toLocaleString()})
-                  </span>
-                )}
-              </td>
-            </tr>
-            {timeRange && (
-              <>
-                <tr className="border-b border-gray-100 dark:border-gray-700">
-                  <td className="px-3 py-2 text-gray-600 dark:text-gray-400">Time Range</td>
-                  <td className="px-3 py-2 font-mono">{formatTimeRange()}</td>
-                </tr>
-                <tr className="border-b border-gray-100 dark:border-gray-700">
-                  <td className="px-3 py-2 text-gray-600 dark:text-gray-400">Duration</td>
-                  <td className="px-3 py-2 font-mono">{formatDuration()}</td>
-                </tr>
-              </>
-            )}
-            <tr className="border-b border-gray-100 dark:border-gray-700">
-              <td className="px-3 py-2 text-gray-600 dark:text-gray-400">Log Levels</td>
-              <td className="px-3 py-2">
-                <div className="flex flex-wrap gap-2">
-                  {(['ERROR', 'WARN', 'INFO', 'DEBUG', 'TRACE', 'UNKNOWN'] as LogLevel[]).map(level => {
-                    const count = levelCounts[level] || 0
-                    if (count === 0) return null
-                    return (
-                      <span
-                        key={level}
-                        className={`px-2 py-1 rounded text-xs font-medium ${
-                          level === 'ERROR' ? 'bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-300' :
-                          level === 'WARN' ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/20 dark:text-amber-300' :
-                          level === 'INFO' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-300' :
-                          level === 'DEBUG' ? 'bg-gray-100 text-gray-800 dark:bg-gray-900/20 dark:text-gray-300' :
-                          level === 'TRACE' ? 'bg-slate-100 text-slate-800 dark:bg-slate-900/20 dark:text-slate-300' :
-                          'bg-gray-100 text-gray-600 dark:bg-gray-900/20 dark:text-gray-400'
-                        }`}
-                      >
-                        {level}: {count.toLocaleString()}
-                      </span>
-                    )
-                  })}
-                </div>
-              </td>
-            </tr>
-          </tbody>
-        </table>
+
+      {entries.length > maxEntriesForSummary && (
+        <div className="text-[11px] text-yellow mb-2">
+          summary based on the first {maxEntriesForSummary.toLocaleString()} lines
+        </div>
+      )}
+
+      {/* Level breakdown as ASCII meters */}
+      <div className="flex flex-col gap-0.5 text-xs">
+        {levels.map(level => {
+          const count = levelCounts[level] || 0
+          const m = meter(counted === 0 ? 0 : count / counted)
+          return (
+            <div key={level} className="grid grid-cols-[52px_1fr_auto] items-center gap-2" title={`${level}: ${count.toLocaleString()}`}>
+              <span className={levelTextClass(level)}>{level}</span>
+              <span className="bar" style={{ color: levelColorVar(level) }}>{m.on}<span className="off">{m.off}</span></span>
+              <span className="tabular-nums text-muted text-right">{count.toLocaleString()}</span>
+            </div>
+          )
+        })}
       </div>
-    </div>
+
+      <div className="mt-3 pt-2 border-t border-line">
+        <div className="lbl mb-0.5">time range</div>
+        <div className="text-[11px] text-muted">{formatTimeRange()}</div>
+      </div>
+    </section>
   )
 }

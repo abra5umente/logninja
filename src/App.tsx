@@ -16,13 +16,17 @@ import LogSummary from './components/LogSummary'
 import LoadBanner from './components/LoadBanner'
 import SettingsSidebar from './components/SettingsSidebar'
 import LoadingOverlay from './components/LoadingOverlay'
-import { applyTheme, saveTheme, applyAccent, saveAccent, getInitialTheme, getInitialAccent } from './lib/theme'
+import GroupHeading from './components/GroupHeading'
+import { applyTheme, getInitialPalette, getInitialSchemePref, resolveScheme, savePalette, saveSchemePref, systemPrefersLight, watchSystemScheme, Palette, SchemePref, PALETTES, PALETTE_LABELS } from './lib/theme'
 
-// Color palette for different log files
-// Note: Supports up to 10 distinct files; colors repeat after that
+// Colours for different log files, from the theme's named colours so they follow the palette.
+// Green, yellow and red are left out because they mean ok / warning / error.
+// Note: Supports up to 6 distinct files; colors repeat after that
 const FILE_COLORS = [
-  '#9CAF88', '#88AFCA', '#CA88AF', '#AFCA88', '#CA9C88',
-  '#88CA9C', '#9C88CA', '#CAA888', '#88CAA8', '#A888CA'
+  'var(--accent)', 'var(--magenta)', 'var(--cyan)',
+  'color-mix(in srgb, var(--accent) 55%, var(--bg))',
+  'color-mix(in srgb, var(--magenta) 55%, var(--bg))',
+  'color-mix(in srgb, var(--cyan) 55%, var(--bg))',
 ]
 
 export default function App() {
@@ -42,8 +46,10 @@ export default function App() {
     currentMatchIndex: 0,
   })
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const [theme, setTheme] = useState<'light' | 'dark'>('dark')
-  const [accent, setAccent] = useState('#9CAF88')
+  const [palette, setPalette] = useState<Palette>(getInitialPalette)
+  const [schemePref, setSchemePref] = useState<SchemePref>(getInitialSchemePref)
+  const [systemLight, setSystemLight] = useState(systemPrefersLight)
+  const [armedFileId, setArmedFileId] = useState<string | null>(null)
   const [binMs, setBinMs] = useState<number>(60000)
   const [cmdOpen, setCmdOpen] = useState(false)
   const searchInputRef = useRef<HTMLInputElement>(null)
@@ -95,7 +101,7 @@ export default function App() {
       const timelineHeight = timelineRef.current?.clientHeight || 0
       const gap = 12 // gap-3 = 12px from flex container
       const marginTop = 12 // mt-3 = 12px margin on timeline wrapper
-      const safetyBuffer = 20 // Extra safety buffer to ensure Clear Filter button is visible
+      const safetyBuffer = 24 // Extra safety buffer to ensure Clear Filter button is visible and the table clears the timeline
 
       // Calculate available height for table with all spacing accounted for
       const availableHeight = centerHeight - timelineHeight - (timelineHeight > 0 ? (gap + marginTop + safetyBuffer) : 0)
@@ -462,15 +468,20 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [filters.searchMode, filters.query, matchingIndices.length, goToNextMatch, goToPreviousMatch])
   
-  useEffect(() => {
-    applyTheme(theme)
-    saveTheme(theme)
-  }, [theme])
+  useEffect(() => watchSystemScheme(() => setSystemLight(systemPrefersLight())), [])
 
   useEffect(() => {
-    applyAccent(accent)
-    saveAccent(accent)
-  }, [accent])
+    applyTheme(palette, resolveScheme(schemePref, systemLight))
+    savePalette(palette)
+    saveSchemePref(schemePref)
+  }, [palette, schemePref, systemLight])
+
+  // Two-click remove: the first click arms the button, which disarms itself after a few seconds
+  useEffect(() => {
+    if (!armedFileId) return
+    const t = setTimeout(() => setArmedFileId(null), 3000)
+    return () => clearTimeout(t)
+  }, [armedFileId])
 
   const runDownloadCsv = () => {
     const csv = rowsToCSV(filtered)
@@ -512,6 +523,8 @@ export default function App() {
     { id: 'export-csv', label: 'Export CSV (filtered)', run: runDownloadCsv },
     { id: 'copy-csv', label: 'Copy CSV (filtered)', run: runCopyCsv },
     { id: 'focus-search', label: 'Focus Search (/)', run: () => searchInputRef.current?.focus() },
+    { id: 'scheme-toggle', label: resolveScheme(schemePref, systemLight) === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode', run: () => setSchemePref(resolveScheme(schemePref, systemLight) === 'dark' ? 'light' : 'dark') },
+    ...PALETTES.map(p => ({ id: `palette-${p}`, label: `Theme: ${PALETTE_LABELS[p]}`, run: () => setPalette(p) })),
   ]
 
   return (
@@ -535,19 +548,7 @@ export default function App() {
       {/* Settings Button - Bottom Right */}
       <button
         type="button"
-        className="fixed right-4 bottom-4 z-20 p-3 rounded-full border border-gray-200 dark:border-gray-700 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 transition-colors shadow-lg"
-        style={{ '--tw-shadow-color': 'var(--accent)' } as React.CSSProperties}
-        onMouseEnter={(e) => {
-          const target = e.currentTarget;
-          const accentColor = getComputedStyle(document.documentElement).getPropertyValue('--accent');
-          target.style.backgroundColor = accentColor;
-          target.style.color = 'white';
-        }}
-        onMouseLeave={(e) => {
-          const target = e.currentTarget;
-          target.style.backgroundColor = '';
-          target.style.color = '';
-        }}
+        className={`pill fixed right-4 bottom-4 z-20 !p-3 text-muted hover:text-accent transition-colors ${settingsOpen ? 'hidden' : ''}`}
         onClick={() => setSettingsOpen(prev => !prev)}
         aria-label="Toggle settings"
         title="Settings"
@@ -556,7 +557,7 @@ export default function App() {
           xmlns="http://www.w3.org/2000/svg"
           viewBox="0 0 20 20"
           fill="currentColor"
-          className="w-6 h-6"
+          className="w-5 h-5"
         >
           <path
             fillRule="evenodd"
@@ -603,10 +604,11 @@ export default function App() {
       >
         {/* Global Drop Overlay */}
         {isDraggingGlobal && (
-          <div className="fixed inset-0 z-50 bg-blue-500/20 dark:bg-blue-500/30 flex items-center justify-center backdrop-blur-sm pointer-events-none">
-            <div className="bg-white dark:bg-gray-800 border-2 border-blue-500 dark:border-blue-400 rounded-lg p-8 shadow-2xl">
-              <div className="text-2xl font-bold text-blue-600 dark:text-blue-400 mb-2">Drop log files here</div>
-              <div className="text-sm text-gray-600 dark:text-gray-400">Supported: .log, .txt, .csv</div>
+          <div className="fixed inset-0 z-50 scrim flex items-center justify-center pointer-events-none">
+            <div className="popup border-2 border-dashed !border-accent px-10 py-8 text-center">
+              <div className="kao text-base mb-2">(｀・ω・´)</div>
+              <div className="font-extrabold text-accent mb-1">drop log files here</div>
+              <div className="text-xs text-muted">.log, .txt or .csv</div>
             </div>
           </div>
         )}
@@ -650,14 +652,14 @@ export default function App() {
           <aside className="flex flex-col gap-3 overflow-y-auto"  style={{ maxHeight: 'calc(100vh - 2rem)' }}>
             {/* Level Filters */}
             {entries.length > 0 && (
-              <div className="border border-gray-200 dark:border-gray-700 rounded-md p-2 bg-white dark:bg-gray-800">
-                <div className="text-xs font-semibold text-gray-700 dark:text-gray-200 mb-2">Log Levels</div>
+              <section className="glass card">
+                <GroupHeading title="log levels" />
                 <LevelFilters
                   selectedLevels={filters.selectedLevels}
                   availableLevels={availableLevels}
                   onLevelClick={handleLevelClick}
                 />
-              </div>
+              </section>
             )}
 
             {/* Log Summary */}
@@ -671,19 +673,19 @@ export default function App() {
 
             {/* Export Controls */}
             {entries.length > 0 && (
-              <div className="border border-gray-200 dark:border-gray-700 rounded-md p-2 bg-white dark:bg-gray-800">
-                <div className="text-xs font-semibold text-gray-700 dark:text-gray-200 mb-2">Export & Actions</div>
+              <section className="glass card">
+                <GroupHeading title="export & actions" />
                 <ExportBar rows={filtered} filters={filters} bookmarked={bookmarkedRows} resetFilters={runClearFilters} />
-              </div>
+              </section>
             )}
 
             {/* Airlock Summary Button */}
             {airlockSummary && (
               <button
-                className="px-2 py-1.5 text-xs bg-[var(--accent)] text-white rounded transition-colors hover:brightness-90"
+                className="btn primary w-full"
                 onClick={() => setAirlockModalOpen(prev => !prev)}
               >
-                {airlockModalOpen ? 'Hide' : 'View'} Airlock Summary
+                {airlockModalOpen ? 'hide' : 'view'} airlock summary
               </button>
             )}
           </aside>
@@ -710,26 +712,21 @@ export default function App() {
 
               {/* Empty State Overlay */}
               {entries.length === 0 && (
-                <div className="absolute inset-0 flex items-center justify-center bg-white/95 dark:bg-gray-800/95 backdrop-blur-sm z-10 pointer-events-none">
+                <div className="absolute inset-0 flex items-center justify-center rounded-panel bg-bg/90 backdrop-blur-sm z-10 pointer-events-none">
                   <div className="text-center">
-                    <div
-                      className="text-5xl font-bold tracking-wide mb-4"
-                      style={{
-                        color: 'var(--accent)',
-                        fontFamily: 'monospace'
-                      }}
-                    >
+                    <div className="text-4xl font-extrabold tracking-tight mb-1 text-accent">
                       logninja.
                     </div>
-                    <div className="text-xl text-gray-600 dark:text-gray-300 mb-2">Drag & drop log files anywhere</div>
-                    <div className="text-sm text-gray-500 dark:text-gray-400 mb-4">or</div>
+                    <div className="kao text-base mb-5">(っ˘ω˘ς)</div>
+                    <div className="text-fg mb-1">drag &amp; drop log files anywhere</div>
+                    <div className="text-xs text-muted mb-4">or</div>
                     <button
-                      className="px-4 py-2 text-sm text-white rounded transition-colors bg-[var(--accent)] hover:brightness-90 pointer-events-auto"
+                      className="btn primary pointer-events-auto"
                       onClick={() => fileInputRef.current?.click()}
                     >
-                      Browse Files...
+                      browse files…
                     </button>
-                    <div className="text-xs text-gray-400 dark:text-gray-500 mt-3">Supported: .log, .txt, .csv</div>
+                    <div className="lbl mt-4">.log · .txt · .csv</div>
                   </div>
                 </div>
               )}
@@ -753,8 +750,8 @@ export default function App() {
           <aside className="flex flex-col gap-3 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 2rem)' }}>
             {/* Search Bar */}
             {entries.length > 0 && (
-              <div className="border border-gray-200 dark:border-gray-700 rounded-md p-2 bg-white dark:bg-gray-800">
-                <div className="text-xs font-semibold text-gray-700 dark:text-gray-200 mb-2">Search</div>
+              <section className="glass card">
+                <GroupHeading title="search" />
                 <div className="flex flex-col gap-2">
                   <SearchBar
                     query={filters.query}
@@ -773,51 +770,59 @@ export default function App() {
                   />
                   <PresetsDropdown onSelect={(pattern) => setFilters(f => ({ ...f, query: pattern, useRegex: true }))} />
                 </div>
-              </div>
+              </section>
             )}
 
             {/* Loaded Files */}
             {loadedFiles.length > 0 && (
-              <div className="border border-gray-200 dark:border-gray-700 rounded-md p-2 bg-white dark:bg-gray-800">
-                <div className="text-xs font-semibold text-gray-700 dark:text-gray-200 mb-2">
-                  Loaded Files ({loadedFiles.length})
-                </div>
+              <section className="glass card">
+                <GroupHeading title="loaded files">
+                  <span className="tabular-nums">{loadedFiles.length}</span>
+                </GroupHeading>
                 <div className="flex flex-col gap-1.5">
                   {loadedFiles.map(file => {
                     const isSelected = filters.selectedFiles?.includes(file.id) ?? false
                     const hasSelection = (filters.selectedFiles?.length ?? 0) > 0
+                    const isArmed = armedFileId === file.id
                     return (
                       <div
                         key={file.id}
-                        className="flex items-center justify-between gap-2 px-2 py-1.5 rounded text-xs text-white cursor-pointer transition-opacity"
+                        className={`flex items-center justify-between gap-2 pl-2.5 pr-1.5 py-1.5 rounded-inner border cursor-pointer transition-[opacity,border-color] ${
+                          isSelected ? 'border-accent bg-accent/10' : 'border-line bg-bg/45 hover:border-line-strong'
+                        }`}
                         style={{
-                          backgroundColor: file.color,
-                          opacity: hasSelection ? (isSelected ? 1 : 0.4) : 1
+                          borderLeft: `3px solid ${file.color}`,
+                          opacity: hasSelection ? (isSelected ? 1 : 0.45) : 1
                         }}
                         onClick={(e) => handleFileClick(file.id, e.ctrlKey || e.metaKey)}
                         title="Click to filter to this file only. Ctrl+click to select multiple files."
                       >
-                        <div className="flex-1 truncate pointer-events-none">
-                          <div className="font-medium">{file.name}</div>
-                          <div className="opacity-80">{file.entryCount.toLocaleString()} entries</div>
+                        <div className="flex-1 min-w-0 pointer-events-none">
+                          <div className="truncate font-semibold text-xs">{file.name}</div>
+                          <div className="text-[11px] text-muted tabular-nums">{file.entryCount.toLocaleString()} entries</div>
                         </div>
                         <button
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation()
-                            removeFile(file.id)
+                            if (isArmed) {
+                              setArmedFileId(null)
+                              removeFile(file.id)
+                            } else {
+                              setArmedFileId(file.id)
+                            }
                           }}
-                          className="hover:opacity-75 text-lg leading-none pointer-events-auto"
-                          aria-label={`Remove ${file.name}`}
-                          title="Remove file"
+                          className={`btn subtle danger !px-2 !py-0.5 pointer-events-auto ${isArmed ? 'armed' : ''}`}
+                          aria-label={isArmed ? `Confirm removing ${file.name}` : `Remove ${file.name}`}
+                          title={isArmed ? 'Click again to remove' : 'Remove file'}
                         >
-                          ×
+                          {isArmed ? 'remove?' : '×'}
                         </button>
                       </div>
                     )
                   })}
                 </div>
-              </div>
+              </section>
             )}
           </aside>
         </div>
@@ -825,7 +830,7 @@ export default function App() {
         {/* Airlock Summary Modal */}
         {airlockSummary && airlockModalOpen && (
           <div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 scrim"
             onClick={(e) => {
               // Close if clicking the backdrop
               if (e.target === e.currentTarget) {
@@ -833,14 +838,14 @@ export default function App() {
               }
             }}
           >
-            <div className="bg-white dark:bg-gray-800 rounded-md shadow-xl w-[min(90vw,1000px)] max-h-[90vh] flex flex-col">
-              <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
-                <div className="font-semibold text-gray-800 dark:text-gray-100">Airlock Debug Summary</div>
+            <div className="popup w-[min(90vw,1000px)] max-h-[90vh] flex flex-col">
+              <div className="px-4 py-3 border-b border-line flex items-center justify-between gap-3">
+                <div className="font-semibold">airlock debug summary</div>
                 <button
-                  className="px-3 py-1.5 text-sm bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 rounded transition-colors hover:bg-[var(--accent)] hover:text-white"
+                  className="btn"
                   onClick={() => setAirlockModalOpen(false)}
                 >
-                  Close
+                  close <kbd className="ml-1">esc</kbd>
                 </button>
               </div>
               <div className="overflow-auto p-4">
@@ -862,10 +867,11 @@ export default function App() {
         <SettingsSidebar
           open={settingsOpen}
           onClose={() => setSettingsOpen(false)}
-          theme={theme}
-          setTheme={setTheme}
-          accent={accent}
-          setAccent={setAccent}
+          palette={palette}
+          setPalette={setPalette}
+          schemePref={schemePref}
+          setSchemePref={setSchemePref}
+          scheme={resolveScheme(schemePref, systemLight)}
         />
       </div>
     </>

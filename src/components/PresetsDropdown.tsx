@@ -15,9 +15,9 @@ interface Props {
 export default function PresetsDropdown({ onSelect }: Props) {
   return (
     <div className="flex items-center gap-2">
-      <label className="text-xs text-gray-600 dark:text-gray-300">Presets</label>
+      <label className="lbl">presets</label>
       <select
-        className="text-sm border border-gray-300 dark:border-gray-600 rounded px-2 py-1 bg-white text-gray-900 dark:bg-gray-800 dark:text-gray-100"
+        className="in"
         defaultValue=""
         onChange={(e) => {
           const v = e.target.value
@@ -25,7 +25,7 @@ export default function PresetsDropdown({ onSelect }: Props) {
           e.currentTarget.value = ''
         }}
       >
-        <option value="" disabled>Choose…</option>
+        <option value="" disabled>choose…</option>
         {PRESETS.map(p => (
           <option key={p.label} value={p.pattern}>{p.label}</option>
         ))}

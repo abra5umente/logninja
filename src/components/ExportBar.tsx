@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react'
 import { FiltersState, LogEntry } from '../lib/types'
 import { rowsToCSV, buildMarkdownSummary } from '../lib/export'
+import Modal from './Modal'
 
 interface Props {
   rows: LogEntry[]
@@ -39,69 +40,23 @@ export default function ExportBar({ rows, filters, bookmarked, resetFilters }: P
     <div className="flex flex-col gap-2">
       <div className="grid grid-cols-2 gap-2">
         <button
-          className="px-2 py-1.5 text-xs bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 rounded transition-colors"
-          style={{ '--tw-shadow-color': 'var(--accent)' } as React.CSSProperties}
-          onMouseEnter={(e) => {
-            const target = e.currentTarget;
-            const accentColor = getComputedStyle(document.documentElement).getPropertyValue('--accent');
-            target.style.backgroundColor = accentColor;
-            target.style.color = 'white';
-          }}
-          onMouseLeave={(e) => {
-            const target = e.currentTarget;
-            target.style.backgroundColor = '';
-            target.style.color = '';
-          }}
+          className="btn"
           onClick={() => download(csv, 'logs.csv', 'text/csv;charset=utf-8')}
-        >Export CSV</button>
+        >export csv</button>
         <button
-          className="px-2 py-1.5 text-xs bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 rounded transition-colors"
-          style={{ '--tw-shadow-color': 'var(--accent)' } as React.CSSProperties}
-          onMouseEnter={(e) => {
-            const target = e.currentTarget;
-            const accentColor = getComputedStyle(document.documentElement).getPropertyValue('--accent');
-            target.style.backgroundColor = accentColor;
-            target.style.color = 'white';
-          }}
-          onMouseLeave={(e) => {
-            const target = e.currentTarget;
-            target.style.backgroundColor = '';
-            target.style.color = '';
-          }}
+          className="btn"
           onClick={async () => { await copy(csv) }}
           title="Copy CSV to clipboard"
-        >Copy CSV</button>
+        >copy csv</button>
         <button
-          className="px-2 py-1.5 text-xs bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 rounded transition-colors"
-          style={{ '--tw-shadow-color': 'var(--accent)' } as React.CSSProperties}
-          onMouseEnter={(e) => {
-            const target = e.currentTarget;
-            const accentColor = getComputedStyle(document.documentElement).getPropertyValue('--accent');
-            target.style.backgroundColor = accentColor;
-            target.style.color = 'white';
-          }}
-          onMouseLeave={(e) => {
-            const target = e.currentTarget;
-            target.style.backgroundColor = '';
-            target.style.color = '';
-          }}
+          className="btn"
           onClick={() => setMdOpen(true)}
-        >Markdown</button>
+        >markdown</button>
         <button
-          className="px-2 py-1.5 text-xs bg-red-200 dark:bg-red-700 text-red-800 dark:text-red-200 rounded transition-colors"
-          style={{ '--tw-shadow-color': 'var(--accent)' } as React.CSSProperties}
-          onMouseEnter={(e) => {
-            const target = e.currentTarget;
-            target.style.backgroundColor = '#ef4444'; // red-500
-            target.style.color = 'white';
-          }}
-          onMouseLeave={(e) => {
-            const target = e.currentTarget;
-            target.style.backgroundColor = '';
-            target.style.color = '';
-          }}
+          className="btn subtle danger"
           onClick={resetFilters}
-        >Reset</button>
+          title="Clear every filter and the search"
+        >reset filters</button>
       </div>
       {mdOpen && (
         <MarkdownModal
@@ -123,70 +78,31 @@ function MarkdownModal({ markdown, onClose, onCopy, onDownload }: {
 }) {
   const [copied, setCopied] = useState(false)
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="bg-white dark:bg-gray-800 rounded-md shadow-xl w-[min(90vw,900px)] max-h-[90vh] flex flex-col">
-        <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
-          <div className="font-semibold text-gray-800 dark:text-gray-100">Markdown Summary</div>
-          <button 
-            className="px-3 py-1.5 text-sm bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 rounded transition-colors hover:bg-[var(--accent)] hover:text-white"
-            style={{ '--tw-shadow-color': 'var(--accent)' } as React.CSSProperties}
-            onMouseEnter={(e) => {
-              const target = e.currentTarget;
-              const accentColor = getComputedStyle(document.documentElement).getPropertyValue('--accent');
-              target.style.backgroundColor = accentColor;
-              target.style.color = 'white';
-            }}
-            onMouseLeave={(e) => {
-              const target = e.currentTarget;
-              target.style.backgroundColor = '';
-              target.style.color = '';
-            }}
-            onClick={onClose}
-          >Close</button>
-        </div>
-        <div className="px-4 py-2 flex items-center gap-3">
-          <div className="flex-1" />
+    <Modal onClose={onClose}>
+      <div className="popup w-[min(90vw,900px)] max-h-[90vh] flex flex-col">
+        <div className="px-4 py-3 border-b border-line flex items-center justify-between gap-2">
+          <div className="font-semibold flex-1">markdown summary</div>
           <button
-            className="px-3 py-1.5 text-sm bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 rounded transition-colors"
-            style={{ '--tw-shadow-color': 'var(--accent)' } as React.CSSProperties}
-            onMouseEnter={(e) => {
-              const target = e.currentTarget;
-              const accentColor = getComputedStyle(document.documentElement).getPropertyValue('--accent');
-              target.style.backgroundColor = accentColor;
-              target.style.color = 'white';
-            }}
-            onMouseLeave={(e) => {
-              const target = e.currentTarget;
-              target.style.backgroundColor = '';
-              target.style.color = '';
-            }}
+            className="btn"
             onClick={async () => { const ok = await onCopy(markdown); setCopied(ok); setTimeout(() => setCopied(false), 1200) }}
-          >{copied ? 'Copied!' : 'Copy to Clipboard'}</button>
+          >{copied ? 'copied' : 'copy to clipboard'}</button>
           <button
-            className="px-3 py-1.5 text-sm bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 rounded transition-colors"
-            style={{ '--tw-shadow-color': 'var(--accent)' } as React.CSSProperties}
-            onMouseEnter={(e) => {
-              const target = e.currentTarget;
-              const accentColor = getComputedStyle(document.documentElement).getPropertyValue('--accent');
-              target.style.backgroundColor = accentColor;
-              target.style.color = 'white';
-            }}
-            onMouseLeave={(e) => {
-              const target = e.currentTarget;
-              target.style.backgroundColor = '';
-              target.style.color = '';
-            }}
+            className="btn"
             onClick={onDownload}
-          >Download .md</button>
+          >download .md</button>
+          <button
+            className="btn subtle"
+            onClick={onClose}
+          >close</button>
         </div>
-        <div className="px-4 pb-4">
+        <div className="p-4">
           <textarea
             readOnly
-            className="w-full h-[60vh] font-mono text-sm p-3 border border-gray-200 dark:border-gray-700 rounded bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100"
+            className="in h-[60vh] resize-none"
             value={markdown}
           />
         </div>
       </div>
-    </div>
+    </Modal>
   )
 }
