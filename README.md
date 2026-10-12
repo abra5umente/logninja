@@ -111,7 +111,7 @@ Highlight search mode:
 
 Or skip the build and run the published image: `docker run --rm -p 8080:80 ghcr.io/abra5umente/logninja:main`
 
-CI publishes an image after the checks pass on every push to `main`: `:main` follows the branch and `:sha-<commit>` pins one build. Pushing a `v1.2.3` tag also publishes `:1.2.3` and `:1.2`.
+CI publishes an image after the checks pass on every push to `main`: `:main` follows the branch and `:sha-<commit>` pins one build.
  
 ## Keyboard & Tips
 - `/` focuses search, `Ctrl/Cmd+K` opens command palette
