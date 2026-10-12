@@ -7,6 +7,7 @@ import { FiltersState, LogEntry, LogLevel, FileInfo } from './lib/types'
 import TimelinePanel from './components/TimelinePanel'
 import PresetsDropdown from './components/PresetsDropdown'
 import { buildSearchRegex } from './lib/search'
+import { nextLevelSelection } from './lib/levelSelection'
 import ExportBar from './components/ExportBar'
 import CommandPalette, { CommandItem } from './components/CommandPalette'
 import { rowsToCSV } from './lib/export'
@@ -403,28 +404,11 @@ export default function App() {
   }
 
   const handleLevelClick = (level: LogLevel, isCtrlClick: boolean) => {
-    if (isCtrlClick) {
-      // Ctrl+click: toggle level in multi-selection
-      setFilters(f => {
-        const current = f.selectedLevels || []
-        const isSelected = current.includes(level)
-        const newSelection = isSelected
-          ? current.filter(l => l !== level)
-          : [...current, level]
-        return {
-          ...f,
-          selectedLevels: newSelection.length > 0 ? newSelection : null,
-          selectedLevel: null  // Clear deprecated field when using multi-select
-        }
-      })
-    } else {
-      // Regular click: select only this level
-      setFilters(f => ({
-        ...f,
-        selectedLevels: [level],
-        selectedLevel: null  // Clear deprecated field
-      }))
-    }
+    setFilters(f => ({
+      ...f,
+      selectedLevels: nextLevelSelection(f.selectedLevels, level, isCtrlClick),
+      selectedLevel: null  // Clear deprecated field
+    }))
   }
 
   // Calculate available levels from loaded files (or filtered files if file filter is active)

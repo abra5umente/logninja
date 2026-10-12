@@ -33,8 +33,8 @@ A fast, client‑side log viewer built with Vite + React + TypeScript. Drag and 
   - Visual feedback: selected files at full opacity, unselected dimmed
 - **Level filtering**: ERROR, WARN, INFO, DEBUG, TRACE, UNKNOWN
   - Dynamically shows only levels present in loaded/filtered files
-  - Click a level → filter to that level only
-  - Ctrl+Click levels → multi-select mode (toggle multiple levels on/off)
+  - Click a level → toggle it on or off (pick as many as you like; none picked shows every level)
+  - Ctrl/Cmd+Click a level → show only that level (again to clear)
   - Visual feedback: selected levels highlighted, unselected dimmed
 - **Time range filtering** via timeline drill-down
 - **Reset button**: Clears all filters (search, files, levels, time range) at once
@@ -118,7 +118,7 @@ CI publishes an image after the checks pass on every push to `main`: `:main` fol
 - **Timeline drill-down**: Click any bin to filter and explore deeper time ranges (Day → Hour → 15min → Minute → Second)
 - **Multi-select filtering**:
   - `Ctrl/Cmd+Click` on files to select multiple files simultaneously
-  - `Ctrl/Cmd+Click` on log levels to select multiple levels simultaneously
+  - Click log levels to toggle them on and off; `Ctrl/Cmd+Click` shows only that level
   - Click selected item again to deselect it
 - **Global drag & drop**: Drop log files anywhere on the page, not just the browse button
 - `ESC` or click outside to dismiss settings/Airlock modals

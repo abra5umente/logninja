@@ -31,7 +31,7 @@ export default function LevelFilters({ selectedLevels, availableLevels, onLevelC
               opacity: hasSelection && !isSelected ? 0.5 : 1
             }}
             aria-pressed={isSelected}
-            title="Click to filter. Ctrl+click to select multiple levels."
+            title="Click to show or hide this level. Ctrl/Cmd+click to show only this level."
           >
             <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: levelColorVar(lvl) }} />
             {lvl}
