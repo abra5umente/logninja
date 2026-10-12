@@ -68,8 +68,7 @@ export default function App() {
   const [loadingFileCount, setLoadingFileCount] = useState(0)
 
   // Refs and state for dynamic height calculation
-  const centerColumnRef = useRef<HTMLDivElement>(null)
-  const timelineRef = useRef<HTMLDivElement>(null)
+  const tableWrapRef = useRef<HTMLDivElement>(null)
   const [tableHeight, setTableHeight] = useState<number>(600) // Default fallback
 
   // Auto-disable bookmark mode when all bookmarks are removed
@@ -93,45 +92,18 @@ export default function App() {
     return () => window.removeEventListener('keydown', handleEsc)
   }, [airlockModalOpen])
 
-  // Calculate VirtualTable height dynamically to fill available space
+  // Size the VirtualTable to the space its wrapper gets from the centre column's flex layout.
+  // The wrapper is flex-1 + min-h-0, so its height comes from the viewport and the timeline,
+  // never from the table's own content, which keeps this from feeding back into itself.
   useEffect(() => {
-    const calculateHeight = () => {
-      if (!centerColumnRef.current) return
-
-      const centerHeight = centerColumnRef.current.clientHeight
-      const timelineHeight = timelineRef.current?.clientHeight || 0
-      const gap = 12 // gap-3 = 12px from flex container
-      const marginTop = 12 // mt-3 = 12px margin on timeline wrapper
-      const safetyBuffer = 24 // Extra safety buffer to ensure Clear Filter button is visible and the table clears the timeline
-
-      // Calculate available height for table with all spacing accounted for
-      const availableHeight = centerHeight - timelineHeight - (timelineHeight > 0 ? (gap + marginTop + safetyBuffer) : 0)
-
-      // Set minimum height to prevent collapse
-      const finalHeight = Math.max(availableHeight, 400)
-      setTableHeight(finalHeight)
-    }
-
-    // Initial calculation
+    const el = tableWrapRef.current
+    if (!el) return
+    const calculateHeight = () => setTableHeight(Math.max(Math.floor(el.getBoundingClientRect().height), 160))
     calculateHeight()
-
-    // Recalculate on window resize
-    window.addEventListener('resize', calculateHeight)
-
-    // Use ResizeObserver to detect timeline height changes
     const resizeObserver = new ResizeObserver(calculateHeight)
-    if (centerColumnRef.current) {
-      resizeObserver.observe(centerColumnRef.current)
-    }
-    if (timelineRef.current) {
-      resizeObserver.observe(timelineRef.current)
-    }
-
-    return () => {
-      window.removeEventListener('resize', calculateHeight)
-      resizeObserver.disconnect()
-    }
-  }, [entries.length]) // Recalculate when entries change (timeline appears/disappears)
+    resizeObserver.observe(el)
+    return () => resizeObserver.disconnect()
+  }, [])
 
   const onText = (text: string, name: string) => {
     const startTime = performance.now()
@@ -631,7 +603,7 @@ export default function App() {
         />
 
         {/* Three-column grid layout */}
-        <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr_320px] gap-4 flex-1 overflow-hidden">
+        <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr_320px] lg:grid-rows-[minmax(0,1fr)] gap-4 flex-1 min-h-0 overflow-hidden">
           {/* Left Sidebar */}
           <aside className="flex flex-col gap-3 overflow-y-auto"  style={{ maxHeight: 'calc(100vh - 2rem)' }}>
             {/* Level Filters */}
@@ -675,9 +647,9 @@ export default function App() {
           </aside>
 
           {/* Center - Main Content */}
-          <main ref={centerColumnRef} className="flex flex-col gap-3 overflow-hidden"  style={{ maxHeight: 'calc(100vh - 2rem)' }}>
+          <main className="flex flex-col gap-3 min-h-0 overflow-hidden">
             {/* Virtual Table */}
-            <div className="relative flex-1 min-h-0">
+            <div ref={tableWrapRef} className="relative flex-1 min-h-0">
               <VirtualTable
                 rows={filtered}
                 height={tableHeight}
@@ -718,7 +690,7 @@ export default function App() {
 
             {/* Timeline - Horizontal */}
             {entries.length > 0 && (
-              <div ref={timelineRef} className="flex-shrink-0 mt-3">
+              <div className="flex-shrink-0">
                 <TimelinePanel
                   entries={entries}
                   binMs={binMs}

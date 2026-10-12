@@ -21,7 +21,8 @@ interface Props {
 const ROW_HEIGHT = 28 // px - height for single-line (no-wrap) rows
 const ROW_HEIGHT_WRAPPED = 48 // px - estimated average height for wrapped rows (~1.5-2 lines)
 const OVERSCAN = 12
-const DEFAULT_HEIGHT = 600 // px - default viewport height
+const DEFAULT_HEIGHT = 600 // px - default panel height (header + rows)
+const MIN_ROW_WIDTH = 640 // px - below this the rows scroll sideways instead of squashing the message column
 
 function formatTime(entry: LogEntry): string {
   if (entry.time) return entry.time.toISOString()
@@ -30,6 +31,7 @@ function formatTime(entry: LogEntry): string {
 
 export default function VirtualTable({ rows, height: propHeight, highlightRe = null, bookmarked, onToggleBookmark, selectedIndex = null, onSelectRow, loadedFiles = [], showBookmarksOnly = false, onShowBookmarksOnlyChange, bookmarkContext = 3, onBookmarkContextChange, bookmarkCount = 0 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
+  const labelsRef = useRef<HTMLDivElement>(null)
   const [scrollTop, setScrollTop] = useState(0)
   const [wrapLines, setWrapLines] = useState(false)
 
@@ -74,7 +76,11 @@ export default function VirtualTable({ rows, height: propHeight, highlightRe = n
   useEffect(() => {
     const el = containerRef.current
     if (!el) return
-    const onScroll = () => setScrollTop(el.scrollTop)
+    const onScroll = () => {
+      setScrollTop(el.scrollTop)
+      if (labelsRef.current) labelsRef.current.style.transform = `translateX(${-el.scrollLeft}px)`
+    }
+    onScroll()
     el.addEventListener('scroll', onScroll)
     return () => el.removeEventListener('scroll', onScroll)
   }, [rows.length]) // Re-run when rows change to ensure listener is attached
@@ -89,7 +95,7 @@ export default function VirtualTable({ rows, height: propHeight, highlightRe = n
   // Always use virtual scrolling for performance
   const items = rows.slice(start, end + 1)
   const offsetY = start * rowHeight
-  const gridCols = wrapLines ? 'grid-cols-[24px_50px_200px_90px_1fr]' : 'grid-cols-[24px_50px_200px_90px_max-content]'
+  const gridCols = wrapLines ? 'grid-cols-[24px_50px_200px_90px_minmax(0,1fr)]' : 'grid-cols-[24px_50px_200px_90px_max-content]'
   const msgCellClass = wrapLines ? 'whitespace-pre-wrap break-words' : 'whitespace-nowrap'
 
   // Limit highlighting for performance with very large datasets
@@ -115,127 +121,127 @@ export default function VirtualTable({ rows, height: propHeight, highlightRe = n
   }, [rows, selectedIndex])
 
   return (
-    <div className="glass overflow-hidden">
-      <div className="overflow-x-auto">
-        <div className="min-w-[900px]">
-          <div className="flex items-center justify-between border-b border-line px-3 py-2">
-            <div className={`grid ${gridCols} gap-0.5 flex-1 lbl`}>
-              <div title="Bookmark" className="text-center">★</div>
-              <div title="Line Number" className="text-center">line</div>
-              <div>time</div>
-              <div>level</div>
-              <div>message</div>
-            </div>
-            <div className="flex items-center gap-3">
-              {/* Bookmark Controls (only shown when bookmarks exist) */}
-              {bookmarkCount > 0 && (
-                <>
-                  <label className="inline-flex items-center gap-2 text-[11px] text-muted select-none cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={showBookmarksOnly}
-                      onChange={(e) => onShowBookmarksOnlyChange?.(e.target.checked)}
-                      className="cursor-pointer"
-                    />
-                    bookmarks only <span className="text-accent tabular-nums">{bookmarkCount}</span>
-                  </label>
-
-                  {showBookmarksOnly && (
-                    <div className="flex items-center gap-1">
-                      <label className="text-[11px] text-muted">context</label>
-                      <select
-                        value={bookmarkContext}
-                        onChange={(e) => onBookmarkContextChange?.(parseInt(e.target.value, 10))}
-                        className="in !w-auto !py-1 !text-[11px]"
-                      >
-                        <option value="1">±1 line</option>
-                        <option value="3">±3 lines</option>
-                        <option value="5">±5 lines</option>
-                        <option value="10">±10 lines</option>
-                      </select>
-                    </div>
-                  )}
-                </>
-              )}
-
-              <div className="seg" role="radiogroup" aria-label="Line wrapping">
-                <button
-                  className={`!py-1 ${wrapLines ? '' : 'on'}`}
-                  onClick={() => setWrapLines(false)}
-                  role="radio"
-                  aria-checked={!wrapLines}
-                  title="Single line with horizontal scroll"
-                >
-                  nowrap
-                </button>
-                <button
-                  className={`!py-1 ${wrapLines ? 'on' : ''}`}
-                  onClick={() => setWrapLines(true)}
-                  role="radio"
-                  aria-checked={wrapLines}
-                  title="Wrap long lines"
-                >
-                  wrap
-                </button>
-              </div>
-            </div>
+    <div className="glass overflow-hidden flex flex-col" style={{ height }}>
+      {/* Header stays put; only the column labels follow the rows' horizontal scroll */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 flex-shrink-0 border-b border-line px-3 py-2">
+        <div className="flex-1 basis-[300px] min-w-0 overflow-hidden">
+          <div ref={labelsRef} className={`grid ${gridCols} lbl`}>
+            <div title="Bookmark" className="text-center">★</div>
+            <div title="Line Number" className="text-center">line</div>
+            <div>time</div>
+            <div>level</div>
+            <div>message</div>
           </div>
+        </div>
+        <div className="ml-auto flex flex-shrink-0 items-center gap-3">
+          {/* Bookmark Controls (only shown when bookmarks exist) */}
+          {bookmarkCount > 0 && (
+            <>
+              <label className="inline-flex items-center gap-2 text-[11px] text-muted select-none cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={showBookmarksOnly}
+                  onChange={(e) => onShowBookmarksOnlyChange?.(e.target.checked)}
+                  className="cursor-pointer"
+                />
+                bookmarks only <span className="text-accent tabular-nums">{bookmarkCount}</span>
+              </label>
 
-          {rows.length === 0 ? (
-            <div className="p-4" style={{ height }}>
-              <div className="empty">
-                <span className="kao">(・・ ) ?</span>
-                nothing to show
-              </div>
-            </div>
-          ) : (
-            <div ref={containerRef} style={{ height, overflow: 'auto' }} className="relative">
-              {/* Spacer div to create scrollable area */}
-              <div style={{ height: totalHeight, width: '100%', pointerEvents: 'none' }}></div>
-              {/* Absolutely positioned content window that moves with scroll */}
-              <div style={{ transform: `translateY(${offsetY}px)`, position: 'absolute', top: 0, left: 0, right: 0, pointerEvents: 'auto' }}>
-                {items.map((r) => {
-                  const fileColor = r.fileId ? fileColorMap.get(r.fileId) : undefined
-                  // Use items-start for wrapped lines to align top, items-center for single lines
-                  const itemsAlign = wrapLines ? 'items-start' : 'items-center'
-                  return (
-                    <div
-                      key={r.index}
-                      className={`grid ${gridCols} text-[12px] px-3 ${itemsAlign} border-b border-line cursor-default ${selectedIndex === r.index ? 'bg-accent/15' : 'hover:bg-fg/5'}`}
-                      style={{
-                        minHeight: wrapLines ? 28 : rowHeight,
-                        height: wrapLines ? 'auto' : rowHeight,
-                        borderLeft: fileColor ? `3px solid ${fileColor}` : undefined,
-                        paddingLeft: fileColor ? '10px' : undefined,
-                        paddingTop: wrapLines ? '6px' : undefined,
-                        paddingBottom: wrapLines ? '6px' : undefined
-                      }}
-                      title={r.fileName ? `${r.fileName}: ${r.message}` : r.message}
-                      onClick={() => onSelectRow && onSelectRow(r.index)}
-                      role="row"
-                      aria-selected={selectedIndex === r.index}
-                    >
-                      <div className="text-center">
-                        <button
-                          className={`w-5 h-5 leading-5 text-center rounded-chip ${bookmarked?.has(r.index) ? 'text-accent' : 'text-muted/50 hover:text-fg'}`}
-                          title={bookmarked?.has(r.index) ? 'Unbookmark' : 'Bookmark'}
-                          onClick={(e) => { e.stopPropagation(); onToggleBookmark && onToggleBookmark(r.index) }}
-                        >★</button>
-                      </div>
-                      <div className="text-center text-muted text-[11px] tabular-nums" title={`Line ${r.index + 1}`}>{r.index + 1}</div>
-                      <div className="tabular-nums text-muted" title={formatTime(r)}>{shouldHighlight ? renderHighlight(formatTime(r), highlightRe) : formatTime(r)}</div>
-                      <div className="font-semibold">
-                        <span className={levelTextClass(r.level)}>{shouldHighlight ? renderHighlight(r.level, highlightRe) : r.level}</span>
-                      </div>
-                      <div className={msgCellClass} title={r.message}>{shouldHighlight ? renderHighlight(r.message, highlightRe) : r.message}</div>
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
+              {showBookmarksOnly && (
+                <div className="flex items-center gap-1">
+                  <label className="text-[11px] text-muted">context</label>
+                  <select
+                    value={bookmarkContext}
+                    onChange={(e) => onBookmarkContextChange?.(parseInt(e.target.value, 10))}
+                    className="in !w-auto !py-1 !text-[11px]"
+                  >
+                    <option value="1">±1 line</option>
+                    <option value="3">±3 lines</option>
+                    <option value="5">±5 lines</option>
+                    <option value="10">±10 lines</option>
+                  </select>
+                </div>
+              )}
+            </>
           )}
-         </div>
-       </div>
+
+          <div className="seg" role="radiogroup" aria-label="Line wrapping">
+            <button
+              className={`!py-1 ${wrapLines ? '' : 'on'}`}
+              onClick={() => setWrapLines(false)}
+              role="radio"
+              aria-checked={!wrapLines}
+              title="Single line with horizontal scroll"
+            >
+              nowrap
+            </button>
+            <button
+              className={`!py-1 ${wrapLines ? 'on' : ''}`}
+              onClick={() => setWrapLines(true)}
+              role="radio"
+              aria-checked={wrapLines}
+              title="Wrap long lines"
+            >
+              wrap
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {rows.length === 0 ? (
+        <div className="p-4 flex-1 min-h-0">
+          <div className="empty">
+            <span className="kao">(・・ ) ?</span>
+            nothing to show
+          </div>
+        </div>
+      ) : (
+        <div ref={containerRef} className="relative flex-1 min-h-0 overflow-auto">
+          {/* Spacer div to create scrollable area */}
+          <div style={{ height: totalHeight, width: '100%', pointerEvents: 'none' }}></div>
+          {/* Absolutely positioned content window that moves with scroll */}
+          {/* As wide as the longest rendered row, so row borders and highlights span the whole scroll width */}
+          <div style={{ transform: `translateY(${offsetY}px)`, position: 'absolute', top: 0, left: 0, width: wrapLines ? '100%' : 'max-content', minWidth: `max(100%, ${MIN_ROW_WIDTH}px)`, pointerEvents: 'auto' }}>
+            {items.map((r) => {
+              const fileColor = r.fileId ? fileColorMap.get(r.fileId) : undefined
+              // Use items-start for wrapped lines to align top, items-center for single lines
+              const itemsAlign = wrapLines ? 'items-start' : 'items-center'
+              return (
+                <div
+                  key={r.index}
+                  className={`grid ${gridCols} text-[12px] px-3 ${itemsAlign} border-b border-line cursor-default ${selectedIndex === r.index ? 'bg-accent/15' : 'hover:bg-fg/5'}`}
+                  style={{
+                    minHeight: wrapLines ? 28 : rowHeight,
+                    height: wrapLines ? 'auto' : rowHeight,
+                    borderLeft: fileColor ? `3px solid ${fileColor}` : undefined,
+                    paddingLeft: fileColor ? '10px' : undefined,
+                    paddingTop: wrapLines ? '6px' : undefined,
+                    paddingBottom: wrapLines ? '6px' : undefined
+                  }}
+                  title={r.fileName ? `${r.fileName}: ${r.message}` : r.message}
+                  onClick={() => onSelectRow && onSelectRow(r.index)}
+                  role="row"
+                  aria-selected={selectedIndex === r.index}
+                >
+                  <div className="text-center">
+                    <button
+                      className={`w-5 h-5 leading-5 text-center rounded-chip ${bookmarked?.has(r.index) ? 'text-accent' : 'text-muted/50 hover:text-fg'}`}
+                      title={bookmarked?.has(r.index) ? 'Unbookmark' : 'Bookmark'}
+                      onClick={(e) => { e.stopPropagation(); onToggleBookmark && onToggleBookmark(r.index) }}
+                    >★</button>
+                  </div>
+                  <div className="text-center text-muted text-[11px] tabular-nums" title={`Line ${r.index + 1}`}>{r.index + 1}</div>
+                  <div className="tabular-nums text-muted" title={formatTime(r)}>{shouldHighlight ? renderHighlight(formatTime(r), highlightRe) : formatTime(r)}</div>
+                  <div className="font-semibold">
+                    <span className={levelTextClass(r.level)}>{shouldHighlight ? renderHighlight(r.level, highlightRe) : r.level}</span>
+                  </div>
+                  <div className={msgCellClass} title={r.message}>{shouldHighlight ? renderHighlight(r.message, highlightRe) : r.message}</div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
