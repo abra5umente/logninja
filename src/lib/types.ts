@@ -36,13 +36,6 @@ export interface FiltersState {
   currentMatchIndex: number  // New: tracks which match is currently selected in find mode
 }
 
-export interface ChunkBin {
-  start: Date
-  end: Date
-  count: number
-  levelCounts: Partial<Record<LogLevel, number>>
-}
-
 
 /** Stable id for an entry: its file plus the line it starts on. Survives files being added or removed. */
 export function entryKey(e: Pick<LogEntry, 'fileId' | 'line'>): string {
