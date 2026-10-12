@@ -1,8 +1,8 @@
 import { LogEntry, LogLevel } from './types'
 
 // Timestamp patterns
-// ISO 8601
-const reISO = /^(\s*)(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:[.,]\d+)?(?:Z|[+-]\d{2}:?\d{2}))/
+// ISO 8601; without a zone (Z or an offset) it is read as local time
+const reISO = /^(\s*)(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:[.,]\d+)?(?:Z|[+-]\d{2}:?\d{2})?)/
 // YYYY-MM-DD HH:mm:ss(.SSS or ,SSS)
 const reYMD_HMS = /^(\s*)(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:[.,]\d+)?)/
 // YYYY/MM/DD HH:mm:ss(.SSS or ,SSS)

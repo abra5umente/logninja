@@ -1,20 +1,20 @@
 # LogNinja
 ![LogNinja in dark and light themes, split diagonally](docs/screenshots/hero.png)
 
-A fast, client‑side log viewer built with Vite + React + TypeScript. Drag and drop logs, filter by level/text/regex, browse a timeline, and export results. Designed to work entirely in the browser (no uploads).  
+A fast, client‑side log viewer built with Vite + React + TypeScript. Drag and drop logs, filter by level/text/regex, group similar lines into patterns, browse a timeline, and export results. Designed to work entirely in the browser (no uploads).  
 
 ## Features
 
 ### UI & Layout
 - **Three-column layout**: Controls on left, log viewer center, search/files on right
 - **Clean initial state**: When no files are loaded, only the LogNinja logo and file browser are shown - all other UI elements appear after loading
-- **Loading animations**: Smooth blur overlay with animated logo and spinner during file processing, with checkmark completion state
+- **Loading overlay**: a blurred overlay with the logo and a waiting kaomoji while files load, which switches to "ready" when they're done
 - **Global drag & drop**: Drop log files anywhere on the window, rotated ones like `server.log.1` included (UTF‑8/UTF‑16 aware; archives and other binary files are skipped with a note)
-- **Modal interactions**: Settings sidebar, Airlock summary modal with ESC/click-outside to dismiss
+- **Modal interactions**: settings, the Airlock summary, the query builder, the Markdown export, the command palette and what's new all close with Esc or a click outside
 - **What's new**: a short popup lists new features once per release (remembered in your browser only, nothing is sent anywhere); reopen it from settings or the command palette
 
 ### Log Viewing
-- **High-performance virtual scrolling**: Handles millions of log entries smoothly
+- **High-performance virtual scrolling**: Handles very large logs smoothly (up to a million lines per file)
   - True infinite scrolling (no pagination)
   - Dynamic line wrapping with auto-height rows
   - **Wrap toggle**: Switch between single-line (horizontal scroll) and multi-line (auto-wrap) views
@@ -25,9 +25,10 @@ A fast, client‑side log viewer built with Vite + React + TypeScript. Drag and 
 
 ### Search & Filtering
 - **Search**: plain text or regex, with match highlighting
-  - Filter or highlight-only modes
+  - **Find** mode (the default) keeps every row and jumps between matches with Enter / Shift+Enter or the arrow buttons
+  - **Filter** mode hides rows that don't match; **highlight only** shows everything and just marks the matches
   - Clear button to quickly reset search
-  - Search presets for common queries
+  - Built-in presets (PowerShell suspicious, Windows crash keywords, Airlock Digital terms)
   - **Query builder** ("build query"): list the words a line should have (any or all of them) and the ones it shouldn't, with `*` as a wildcard (`Program Files\*\app.exe`) or a regex per term, and a live preview of matching lines
   - **Saved queries**: name a query in the builder to keep it (stored in your browser); it shows up under the presets, and "edit query" reopens it in the builder
 - **File filtering** (multi-file support):
@@ -36,7 +37,7 @@ A fast, client‑side log viewer built with Vite + React + TypeScript. Drag and 
   - Click selected file again → deselect it (shows all files)
   - Visual feedback: selected files at full opacity, unselected dimmed
 - **Level filtering**: ERROR, WARN, INFO, DEBUG, TRACE, UNKNOWN
-  - Dynamically shows only levels present in loaded/filtered files
+  - Only shows the levels present in the loaded files (or the selected files)
   - Click a level → toggle it on or off (pick as many as you like; none picked shows every level)
   - Ctrl/Cmd+Click a level → show only that level (again to clear)
   - Visual feedback: selected levels highlighted, unselected dimmed
@@ -60,14 +61,14 @@ A fast, client‑side log viewer built with Vite + React + TypeScript. Drag and 
   - "← zoom out" steps back one zoom, "show all" goes back to the full span
   - Follows your file, level and search filters; in find mode, search hits get their own strip under the bars
   - Keyboard: focus the timeline, then arrow keys move between bars, Enter zooms in, Backspace zooms out
-  - Fixed statistics panel prevents layout shift during navigation
-  - Optimized for large time spans (handles year+ log files without stack overflow)
+  - A readout above the bars shows the range you're looking at (or hovering), its entry count, per-level counts and search hits
+  - Long spans (a year or more) bin by whole days, so big files stay quick
 
 ### Bookmarks & Export
 - Bookmarks: star lines and export them (CSV/Markdown includes "Bookmarked Lines")
   - **Bookmark-only view**: Show only bookmarked lines with configurable context (±1, 3, 5, or 10 lines), within the current level, file and time filters
 - Export to CSV or Markdown
-- Copy all filtered entries to clipboard
+- Copy all filtered entries to the clipboard as CSV
 
 ### Special Features
 - **Airlock summary**: Auto-detected for Airlock Digital logs (modal with 71 fields grouped into Agent, Host, Server connection, Policy and Executions; Windows, Linux and macOS agents, including 7.x debug logs from all three). Click a value to search the log for the lines behind it
@@ -95,7 +96,7 @@ Settings with system / light / dark modes and five colour palettes:
 ![Settings panel with appearance, palette and keymap](docs/screenshots/settings.png)
 
 ## Supported Formats (non‑exhaustive)
-- ISO/RFC3339, `YYYY-MM-DD HH:mm:ss[.SSS|,SSS]`
+- ISO 8601 / RFC 3339 (`2026-01-05T10:00:01.123Z`, `...+10:00`, or no zone, read as local time), `YYYY-MM-DD HH:mm:ss[.SSS|,SSS]`
 - `YYYY/MM/DD HH:mm:ss[.SSS|,SSS]`
 - DMY/MDY `dd/MM/yyyy HH:mm:ss[.SSS][ AM|PM]` (inferred)
 - `dd Mon yyyy HH:mm:ss[.SSS]`
@@ -104,7 +105,7 @@ Settings with system / light / dark modes and five colour palettes:
 - Resque: `name: [LEVEL] <ISO ts>: message`
 - Ruby logger lines: `W, [ISO ts #pid] WARN -- : message`
 - MongoDB structured JSON `{ "t": { "$date": ... }, "s": "I", "msg": ... }`
-- MSI: `MSI (c|s) (...) [HH:mm:ss:SSS]` (time‑only; date inferred from file), or `[YYYY-MM-DD HH:mm:ss:SSS]`
+- MSI: `MSI (c|s) (...) [HH:mm:ss:SSS]: message` (time‑only; date inferred from the file) or `MSI (c|s) (...) [YYYY-MM-DD HH:mm:ss:SSS]: message`
 - Airlock agent (Linux): `YYYY-MM-DD HH:mm:ss INFO|WARN|ERROR|DEBUG message` and `FILE CHECK Filename=... Result="..."` (blocked = ERROR, blocked in audit mode = WARN, allowed = INFO)
 - Airlock agent (macOS): the same lines as the Linux agent, with file names that contain a space written in quotes (`Filename="/Applications/Some App.app/..."`), plus `YYYY-MM-DD HH:mm:ss INFO  FILE CHECK Filename: <path>, OpType: 11, Result: ...` for Apple's own binaries (level from the result), `FILE CHECK Extension Title="..." ... Browser="..." Result="..."` for browser extensions (blocked = ERROR, blocked in audit mode = WARN) and `INFO  ERROR: ...` lines such as `ERROR: es_new_client() failed with 4`, which are marked ERROR
 - Airlock agent (Windows): tab-separated `MM/DD/YYYY h:mm:ss AM|PM`, kind (`INFO|WARNING|ERROR|DEBUG|FILE CHECK|FILE PRE-CHECK`), thread id, message. `FILE CHECK ... Result: ...` and `[EXT-BLOCK] Extension Title: ... Result: ...` take their level from the result (blocked = ERROR, blocked in audit mode or run in PowerShell Constrained Language Mode = WARN, allowed = INFO); the `Blocking Reasons:` line joins its `FILE CHECK` row; the thread id is kept as `[1234]` at the start of the message
@@ -117,24 +118,22 @@ Settings with system / light / dark modes and five colour palettes:
 
 ## Getting Started
 
-**Local Install**
-- Requirements: Node.js 18+ and npm
-- Install: `npm install`
-- Dev: `npm run dev` (binds `0.0.0.0`), then visit `http://localhost:5173` or `http://yourip:5173` from network devices
-- Build: `npm run build`
-
 **Docker (recommended)**
-- Clone repo
-- Build the image: `docker build -t logninja .`
-- Run the container: `docker run --rm -p 8080:80 logninja`
+- Run the published image: `docker run --rm -p 8080:80 ghcr.io/abra5umente/logninja:main`
 - Open http://localhost:8080
 
-Or skip the build and run the published image: `docker run --rm -p 8080:80 ghcr.io/abra5umente/logninja:main`
+CI publishes the image after the checks pass on every push to `main`: `:main` follows the branch and `:sha-<commit>` pins one build. To build it yourself instead, clone the repo, then `docker build -t logninja .` and `docker run --rm -p 8080:80 logninja`.
 
-CI publishes an image after the checks pass on every push to `main`: `:main` follows the branch and `:sha-<commit>` pins one build.
- 
+**Local Install**
+- Requirements: Node.js 18+ and npm (CI and the Docker build use Node 24)
+- Install: `npm install`
+- Dev: `npm run dev` (binds `0.0.0.0`), then visit `http://localhost:5173`, or `http://<your-ip>:5173` from other devices on your network
+- Test: `npm test`
+- Build: `npm run build` (output in `dist/`), then `npm run preview` to serve it
+
 ## Keyboard & Tips
 - `/` focuses search, `Ctrl/Cmd+K` opens command palette
+- In find mode, `Enter` / `Shift+Enter` jump to the next / previous match
 - Click a row, then `Ctrl/Cmd+C` to copy its full raw text
 - **Wrap toggle**: Enable for multi-line rows that adapt to content length; disable for single-line rows with horizontal scrolling
 - **Timeline zoom**: Click a bar to zoom in, or drag across bars to pick a range
@@ -143,10 +142,10 @@ CI publishes an image after the checks pass on every push to `main`: `:main` fol
   - Click log levels to toggle them on and off; `Ctrl/Cmd+Click` shows only that level
   - Click selected item again to deselect it
 - **Global drag & drop**: Drop log files anywhere on the page, not just the browse button
-- `ESC` or click outside to dismiss settings/Airlock modals
+- `Esc` or a click outside closes settings, the Airlock summary and other pop-ups
 - Virtual scrolling works smoothly in both wrap and no-wrap modes for optimal performance
 - Try and find the pizza-flavoured easter egg
 
 ## Privacy
 
-The app runs fully in your browser; logs are not uploaded. Exports are generated locally.
+The app runs fully in your browser; logs are not uploaded. Exports are generated locally. The only things kept are your theme, saved queries and which "what's new" notes you've seen, all in your browser's local storage. The page loads its font from Google Fonts; offline it falls back to your system's monospace font.
