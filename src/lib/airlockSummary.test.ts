@@ -445,6 +445,243 @@ describe('extractAirlockSummary: Windows 7.x agent debug log', () => {
   })
 })
 
+// A made-up macOS agent debug log in the 7.x line format. Nothing here is copied from a real system.
+const M_CLIENT = '77777777-2222-3333-4444-555555555555'
+const M_POLICY_A = '88888888-0000-0000-0000-000000000003'
+const M_POLICY_B = '88888888-0000-0000-0000-000000000004'
+const M_DB = '/Library/Application Support/Airlock Digital/Airlock Enforcement Agent/db'
+const M_CORE = '/Library/Airlock Digital/AirlockEnforcementAgentCore.app/Contents/MacOS/AirlockEnforcementAgentCore'
+// Executions of Apple's own binaries are logged on INFO lines, without a hash
+const apple = (ts: string, file: string) => `${ts} INFO  FILE CHECK Filename: ${file}, OpType: 11, Result: Allowing file to run - Trusted Execution`
+
+// Browser extension decisions are FILE CHECK lines on macOS
+const extension = (ts: string, result: string) =>
+  `${ts} FILE CHECK Extension Title="Example Reader" Hash=${h('aa')} Extension Folder=1.2.3_0 Extension Path="/Users/tester/Library/Application Support/Google/Chrome/Default/Extensions/abcdefghijklmnopabcdefghijklmnop" Browser="Google Chrome" Result="${result}"`
+
+const MAC_LOG = [
+  '2026-02-03 09:00:00 INFO  ================================================================================',
+  '2026-02-03 09:00:00 INFO  Starting Airlock Enforcement Agent (v7.0.1.4321-fedcba9)',
+  '2026-02-03 09:00:00 INFO  MAXPROCS (default) = 4',
+  '',
+  '2026-02-03 09:00:00 INFO  RPC communication: Secured',
+  '2026-02-03 09:00:00 INFO  RPC communication at port 1125',
+  '2026-02-03 09:00:00 INFO  ERROR: es_new_client() failed with 4',
+  '2026-02-03 09:00:00 INFO  es_new_client() start failed',
+  '2026-02-03 09:00:01 INFO  Airlock PID: 700',
+  `2026-02-03 09:00:01 INFO  AirlockHash: ${h('2a')}`,
+  '2026-02-03 09:00:01 INFO  OS: macOS 27.0.1',
+  '2026-02-03 09:00:01 INFO  Kernel: 27.0.0',
+  '2026-02-03 09:00:01 INFO  CPU Core Count: 4',
+  '2026-02-03 09:00:01 INFO  Computer Name: lab-mac.example',
+  '2026-02-03 09:00:01 INFO  Logged User: tester (UID: 501)',
+  '2026-02-03 09:00:01 INFO  Local IP Address: 10.0.0.7',
+  `2026-02-03 09:00:01 INFO  Machine Id: ${h('3b')}`,
+  '2026-02-03 09:00:01 INFO  System Files:',
+  `2026-02-03 09:00:01 INFO  bash: hash = ${h('4c')}, path = /bin/bash`,
+  '2026-02-03 09:00:02 ERROR [/build/agent/airlock/localsettings.go:453] Establish Connection ~ Connect ~  unable to connect on port  using IP Address Fallback',
+  '2026-02-03 09:00:02 INFO  Establish Connection ~ Connect ~ airlock.example contacted successfully on port 443',
+  '2026-02-03 09:00:02 INFO  Configuration ~ Primary Airlock Server ~ airlock.example',
+  '2026-02-03 09:00:02 INFO  Configuration ~ Primary Airlock Server ~ 10.0.0.9 (fallback)',
+  '2026-02-03 09:00:02 INFO  Proxy not configured (XML)',
+  '2026-02-03 09:00:02 INFO  Relay Count = 0',
+  `2026-02-03 09:00:02 INFO  Init Policy: ${M_DB}/${M_CLIENT}.db, ${M_DB}/${M_POLICY_A}.db`,
+  '2026-02-03 09:00:02 INFO  SessionWatcher: Active GUI session changed. user: tester, UID: 501',
+  '2026-02-03 09:00:03 INFO  Adding File Extension: sh',
+  '2026-02-03 09:00:03 INFO  Adding File Extension: dylib',
+  '2026-02-03 09:00:03 INFO  Adding File Extension: scpt',
+  '2026-02-03 09:00:03 INFO  Auditmode: true',
+  `2026-02-03 09:00:03 INFO  Initializing Hash database: ${M_DB}/${M_POLICY_A}.db`,
+  '2026-02-03 09:00:03 INFO  LoadMetarules: query metarules',
+  '2026-02-03 09:00:03 INFO  LoadMetarules: query ametarules',
+  '2026-02-03 09:00:03 INFO  LoadBrowseExt: query browser_extensions',
+  '2026-02-03 09:00:03 INFO  Self Service is disabled',
+  '2026-02-03 09:00:03 INFO  Relay Mode = ',
+  '2026-02-03 09:00:03 INFO  Current hash database version verified: 2',
+  '2026-02-03 09:00:04 INFO  Check In ~ Report Status ~ Reporting agent status to server',
+  '2026-02-03 09:00:04 INFO  Check In ~ Policy Update ~ Checking for new policy version the current version is 4',
+  '2026-02-03 09:00:05 INFO  ERROR: es_new_client() failed with 4',
+  '2026-02-03 09:00:05 INFO  es_new_client() start failed',
+  apple('2026-02-03 09:00:20', '/usr/libexec/xpcproxy'),
+  apple('2026-02-03 09:00:20', '/System/Applications/System Settings.app/Contents/MacOS/System Settings'),
+  apple('2026-02-03 09:00:21', '/bin/bash'),
+  apple('2026-02-03 09:00:22', '/bin/bash'),
+  blocked('2026-02-03 09:01:00', '/Users/Shared/example/run.sh', 'Blocking File - Untrusted Execution [Audit]', '/bin/zsh', 'Not Signed'),
+  '2026-02-03 09:02:00 INFO  Prevented Change Dir to: /Library/Airlock Digital ',
+  '2026-02-03 09:02:01 INFO  Prevented Change Dir to: /Library/Airlock Digital ',
+  '2026-02-03 09:03:00 DEBUG RPC: [SetDebugMode: true]',
+  '2026-02-03 09:03:00 DEBUG SetCgoLogs: [true]',
+  '2026-02-03 09:03:00 INFO  Loading Policy Settings...',
+  '2026-02-03 09:03:00 INFO  Debug Logging is now enabled',
+  '2026-02-03 09:03:30 DEBUG CheckAllowlistBrowserExtensions: [Checking allowlist extensionids]',
+  '2026-02-03 09:03:30 INFO  ExtType: 13, Action: ALLOWED, Mode: AUDIT, Allowed: true',
+  extension('2026-02-03 09:03:30', 'Blocking Extension - Untrusted Execution [Audit]'),
+  `2026-02-03 09:04:00 INFO  Check In ~ Policy Update ~ Client was moved to a new policy with policyid: ${M_POLICY_B}`,
+  `2026-02-03 09:04:00 DEBUG PostAPI: [/api/getpolicy ${M_DB}/tmppolicydb]`,
+  '2026-02-03 09:04:01 DEBUG SetProtection: [false]',
+  '2026-02-03 09:04:01 DEBUG SetProtection: [true]',
+  '2026-02-03 09:04:01 DEBUG ProcessTrustedInstaller: [false]',
+  '2026-02-03 09:04:01 DEBUG SetExtScript - dylib enabled: [true]',
+  '2026-02-03 09:04:01 DEBUG SetExtScript - python enabled: [true]',
+  '2026-02-03 09:04:01 DEBUG SetExtScript - java enabled: [false]',
+  '2026-02-03 09:04:01 DEBUG SetExtScript - applescript enabled: [true]',
+  '2026-02-03 09:04:01 INFO  Auditmode: false',
+  '2026-02-03 09:04:02 INFO  Check In ~ Hash DB Update ~ New hash database version applied successfully, version is now 3',
+  `2026-02-03 09:04:02 DEBUG GetAPI: [/api/setpolicyver/${M_CLIENT}/7.3 ]`,
+  '2026-02-03 09:04:02 INFO  Check In ~ Policy Update ~ New policy version applied successfully, version is now 7',
+  '2026-02-03 09:05:00 DEBUG ES: [2026-02-02T22:05:00.100Z /Users/Shared/example/tool]',
+  '2026-02-03 09:05:00 DEBUG GetMode: [ENFORCED]',
+  '2026-02-03 09:05:00 DEBUG ES HandleFile: [/Users/Shared/example/tool]',
+  '2026-02-03 09:05:00 DEBUG Username - tester = 501',
+  '2026-02-03 09:05:00 DEBUG HandleFile: [Publisher: Not Signed]',
+  '2026-02-03 09:05:00 DEBUG CheckBlocklist: [Checking blocklist database]',
+  '2026-02-03 09:05:00 DEBUG HandleFile: [Sending response for: /Users/Shared/example/tool, response=BLOCK]',
+  blocked('2026-02-03 09:05:00', '/Users/Shared/example/tool', 'Blocking File - Blocked Execution', '/usr/bin/sudo', 'Not Signed'),
+  '2026-02-03 09:05:00 DEBUG BLOCKED: [/Users/Shared/example/tool]',
+  '2026-02-03 09:05:00 DEBUG ES Notify message: [tool has been prevented from executing as a result of Allowlisting.]',
+  '2026-02-03 09:05:00 DEBUG SendEventLog: [03/02/2026 9:05:00 AM /Users/Shared/example tool]',
+  `2026-02-03 09:05:00 DEBUG SubmitFile: [filename:"/Users/Shared/example/tool" hash:"${h('ab')}" user:"tester" publisher:"Not Signed"]`,
+  '2026-02-03 09:05:00 DEBUG PostAPI: [/api/submitfile ]',
+  blocked('2026-02-03 09:05:01', '/Users/Shared/example/tool', '(CACHED) Blocking File - Blocked Execution', '/usr/bin/sudo', 'Not Signed'),
+  // A path with a space in it is written in quotes
+  `2026-02-03 09:05:02 FILE CHECK Filename="/Volumes/Example App/Example.app/Contents/Frameworks/libexample.dylib" Hash="${h('ef')} not found in the database" Type=1 Result="Blocking File - Blocked Execution" Blocking Reasons==> GrandParent="kernel_task not found in Process Exclusion" Parent="/usr/libexec/example_helper not found in Process Exclusion" Path="/Volumes/Example App/Example.app/Contents/Frameworks/libexample.dylib not found in Path Exclusions" Publisher="Example Corp (ABCDE12345) not found in Publisher Exclusions"`,
+  `2026-02-03 09:05:03 FILE CHECK Filename="/Applications/Example App.app/Contents/MacOS/Example App" Hash=${h('cd')} Type=5 Result="Allowing file to run - Trusted Publisher Execution"`,
+  `2026-02-03 09:05:04 FILE CHECK Filename=/usr/lib/libexample.dylib Hash=${h('cd')} Type=5 Result="(CACHED) Allowing file to run - Trusted Publisher Execution"`,
+  apple('2026-02-03 09:05:05', '/bin/bash'),
+  '2026-02-03 09:05:10 DEBUG CheckAllowlistBrowserExtensions: [Checking allowlist extensionids]',
+  '2026-02-03 09:05:10 INFO  ExtType: 12, Action: BLOCKED, Mode: ENFORCED, Allowed: false',
+  extension('2026-02-03 09:05:10', 'Blocking Extension - Blocked Execution'),
+  '2026-02-03 09:05:10 DEBUG Browser-Ext: [Removed extension file: /Users/tester/Library/Application Support/Google/Chrome/Default/Extensions/abcdefghijklmnopabcdefghijklmnop]',
+  '2026-02-03 09:05:10 DEBUG ES Notify message: [The browser extension you attempted to install has been blocked by your security policy.]',
+  '2026-02-03 09:06:00 INFO  RPC: GetAgentInfo: Server:"airlock.example" ClientVersion:"7.0.1.4321-fedcba9" PolicyVersion:"v7.3" GroupParent:"Lab" GroupName:"macOS Test" PolicyId:"' + M_POLICY_B + '" Mode:EnforcementMode DebugMode:true RequestsMode:true ESCache:true Protect:true OnlineStatus:ONLINE KernelMode:"Initialising" ClientId:"' + M_CLIENT + '"',
+  '2026-02-03 09:07:00 DEBUG RPC: [UnloadAgentCore]',
+  '2026-02-03 09:07:00 DEBUG SetProtection: [false]',
+  `2026-02-03 09:07:00 INFO  Unprotected. Allowed Signal 15: ${M_CORE}`,
+  '2026-02-03 09:07:00 DEBUG Signal: [Signal terminate triggered.]',
+].join('\n')
+
+describe('extractAirlockSummary: macOS 7.x agent debug log', () => {
+  const s = extractAirlockSummary(MAC_LOG)
+
+  it('reads agent and host details', () => {
+    expect(s['Airlock Version']).toBe('7.0.1.4321-fedcba9')
+    expect(s['Agent Starts']).toBe('1')
+    expect(s['Agent Stops']).toBe('1')
+    expect(s['Debug Logging']).toBe('Yes (30 debug lines)')
+    expect(s['Errors and Warnings']).toBe('3 errors, 0 warnings')
+    expect(s['Agent PID']).toBe('700')
+    expect(s['RPC']).toBe('Secured, port 1125')
+    expect(s['Computer Name']).toBe('lab-mac.example')
+    expect(s['Operating System']).toBe('macOS 27.0.1')
+    expect(s['Kernel']).toBe('27.0.0')
+    expect(s['Logged User']).toBe('tester (UID: 501)')
+    expect(s['Primary Airlock Server']).toBe('airlock.example')
+    expect(s['Fallback Server']).toBe('10.0.0.9')
+    expect(s['Client Id']).toBe(M_CLIENT)
+  })
+
+  it('says how Endpoint Security started', () => {
+    expect(s['Kernel Mode']).toBe('Endpoint Security (failed to start 2 times first: error 4, not permitted, last at 2026-02-03 09:00:05)')
+    const never = extractAirlockSummary([
+      '2026-02-03 09:00:00 INFO  ERROR: es_new_client() failed with 4',
+      '2026-02-03 09:00:00 INFO  es_new_client() start failed',
+      '2026-02-03 09:00:01 INFO  OS: macOS 27.0.1',
+    ].join('\n'))
+    expect(never['Kernel Mode']).toBe('Endpoint Security did not start (tried 1 time: error 4, not permitted, last at 2026-02-03 09:00:00)')
+    // A rotated log has no start-up lines; the INFO form of FILE CHECK is enough to tell it is macOS
+    const rotated = extractAirlockSummary(apple('2026-02-03 09:00:20', '/bin/ls'))
+    expect(rotated['Kernel Mode']).toBe('Endpoint Security')
+    expect(rotated['Execution Count']).toBe('1')
+  })
+
+  it('reports tamper protection and script control', () => {
+    // The stop switched protection off last
+    expect(s['Tamper Protection']).toBe('Off\nPrevented Change Dir to: /Library/Airlock Digital (2)')
+    expect(s['Script Control']).toBe('On: dylib, python, applescript\nOff: java')
+    // A later policy load that lists no script types replaces the earlier list
+    const later = extractAirlockSummary([
+      '2026-02-03 09:04:01 DEBUG ProcessTrustedInstaller: [false]',
+      '2026-02-03 09:04:01 DEBUG SetExtScript - python enabled: [true]',
+      '2026-02-03 09:10:00 DEBUG ProcessTrustedInstaller: [false]',
+      '2026-02-03 09:10:00 DEBUG SetCacheScript - sh enabled: [false]',
+    ].join('\n'))
+    expect(later['Script Control']).toBe('—')
+  })
+
+  it('reports the latest policy state and what it changed from', () => {
+    expect(s['Policy DB Version']).toBe('7 (previously 4)')
+    expect(s['Hash DB Version']).toBe('3 (previously 2)')
+    expect(s['Policy Id']).toBe(`${M_POLICY_B} (previously ${M_POLICY_A})`)
+    expect(s['Policy Group']).toBe('Lab / macOS Test')
+    expect(s['Policy Updates']).toBe('1')
+    expect(s['Audit Mode']).toBe('No (changed from Yes at 2026-02-03 09:04:01)')
+    expect(s['Self Service Enabled']).toBe('No')
+    expect(s['File Extensions Added']).toBe('3')
+  })
+
+  it('counts both forms of FILE CHECK, with and without quotes around the file name', () => {
+    expect(s['Execution Count']).toBe('11')
+    expect(s['Allowed Executions']).toBe('7')
+    expect(s['Blocked Executions']).toBe('3')
+    expect(s['Audit Blocks']).toBe('1')
+    expect(s['Execution Results']).toBe([
+      'Allowing file to run - Trusted Execution (5)',
+      'Blocking File - Blocked Execution (3)',
+      'Allowing file to run - Trusted Publisher Execution (2)',
+      'Blocking File - Untrusted Execution [Audit] (1)',
+    ].join('\n'))
+    expect(s['Top Executed File']).toBe('/bin/bash (3)')
+    expect(s['Top Blocked File']).toBe('/Users/Shared/example/tool (2)')
+    expect(s['Top Blocked Parent']).toBe('/usr/bin/sudo (2)')
+    expect(s['Top Blocked Publisher']).toBe('Not Signed (3)')
+    expect(s['Users Seen']).toBe('tester (UID 501)')
+    expect(s['Block Notifications']).toBe('2')
+    expect(s['Untrusted Files Submitted']).toBe('1')
+  })
+
+  it('counts browser extension decisions apart from executions', () => {
+    expect(s['Blocked Browser Extensions']).toBe('Example Reader, Google Chrome (1)')
+    expect(s['Audit Browser Extensions']).toBe('Example Reader, Google Chrome (1)')
+    // Lines that only mention browser extensions are not allowlist entries
+    expect(s['Allowlist Browser Extensions loaded']).toBe('—')
+  })
+
+  it('gives every filled-in field a search that finds rows in the parsed log', () => {
+    const rows = parseLog(MAC_LOG).map(e => `${e.timeStr} ${e.level} ${e.message}`)
+    const hits = (key: (typeof AIRLOCK_FIELDS)[number], data = s) => {
+      const token = getAirlockFieldSearchString(key, data)
+      const useRegex = key === 'Proxy Configured' || /^\(\?i\)/.test(token) || /[.*+?^${}()|[\]\\]/.test(token)
+      const { re } = buildSearchRegex(token, useRegex)
+      return re ? rows.filter(r => new RegExp(re.source, 'i').test(r)).length : 0
+    }
+    for (const key of AIRLOCK_FIELDS) {
+      if (s[key] === '—' || key === 'Log Period') continue
+      expect(hits(key), key).toBeGreaterThan(0)
+    }
+    expect(hits('Agent Stops')).toBe(1)
+    expect(hits('Errors and Warnings')).toBe(3)
+    expect(hits('Kernel Mode')).toBe(2)
+    expect(hits('Execution Count')).toBe(11)
+    expect(hits('Allowed Executions')).toBe(7)
+    expect(hits('Blocked Executions')).toBe(3)
+    expect(hits('Audit Blocks')).toBe(1)
+    expect(hits('Top Executed File')).toBe(3)
+    expect(hits('Top Blocked File')).toBe(2)
+    expect(hits('Policy Updates')).toBe(1)
+    expect(hits('Untrusted Files Submitted')).toBe(1)
+    expect(hits('Blocked Browser Extensions')).toBe(1)
+    expect(hits('Audit Browser Extensions')).toBe(1)
+    // A file name that is written in quotes is still found
+    const quoted = { ...s, 'Top Blocked File': '/Volumes/Example App/Example.app/Contents/Frameworks/libexample.dylib (1)' }
+    expect(hits('Top Blocked File', quoted)).toBe(1)
+  })
+
+  it('leaves the fields only the other agents log empty', () => {
+    for (const key of ['Agent Memory', 'Packages Indexed', 'Mountpoints Monitored', 'Powershell Constrained Mode', 'Constrained Executions', 'Interop Checks'] as const) {
+      expect(s[key], key).toBe('—')
+    }
+  })
+})
+
 describe('extractAirlockSummary: other logs', () => {
   it('still reads an older Windows agent line', () => {
     const s = extractAirlockSummary('08/13/2025 9:15:30 AM\tINFO\t12\tFound Publisher: Example Corp')

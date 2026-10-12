@@ -157,7 +157,7 @@ function looseLevel(s: string): LogLevel {
 
 // Airlock agent execution decisions: blocked in enforcement is an error, blocked in audit mode is a warning.
 // "Blocking File - Constrained Execution" is a PowerShell script that ran, but in Constrained Language Mode: a warning too.
-// Linux writes Result="..."; Windows writes ", Result: ..." to the end of the line
+// Linux and macOS write Result="..."; Windows, and macOS for Apple's own binaries, write ", Result: ..." to the end of the line
 function airlockFileCheckLevel(rest: string): LogLevel {
   const result = rest.match(/\bResult="([^"]*)"/)?.[1] ?? rest.match(/, Result: ([^\n]*)/)?.[1] ?? rest
   if (!/\bBlock/i.test(result)) return 'INFO'
@@ -230,6 +230,13 @@ export function parseLog(text: string, fileId: string = '', fileName: string = '
   // Airlock Enforcement Agent execution decisions, e.g.:
   // 2026-01-05 10:00:03 FILE CHECK Filename=/usr/bin/x Hash="..." Type=2 Result="Blocking File - Untrusted Execution [Audit]" ...
   const reAirlockFileCheck = /^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:[.,]\d+)?)\s+(FILE CHECK\s.*)$/
+  // Airlock Enforcement Agent on macOS: executions of Apple's own binaries were seen logged as INFO lines with no hash, e.g.:
+  // 2026-01-05 10:00:03 INFO  FILE CHECK Filename: /bin/ls, OpType: 11, Result: Allowing file to run - Trusted Execution
+  // Everything else it checks is written the way the Linux agent writes it, above.
+  const reAirlockMacFileCheck = /^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:[.,]\d+)?)\s+INFO\s+(FILE CHECK Filename: .*)$/
+  // The macOS agent also reports some failures on INFO lines, e.g.:
+  // 2026-01-05 10:00:00 INFO  ERROR: es_new_client() failed with 4
+  const reAirlockInfoError = /^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:[.,]\d+)?)\s+INFO\s+(ERROR: .*)$/
   // Airlock Enforcement Agent on Windows: tab-separated time, kind, thread id and message, e.g.:
   // 01/13/2026 9:00:00 AM<TAB>INFO<TAB>1234<TAB>Proxy not configured
   // Kind is INFO, DEBUG, WARNING, ERROR, FILE CHECK or FILE PRE-CHECK. A blocked FILE CHECK is followed by an
@@ -269,6 +276,16 @@ export function parseLog(text: string, fileId: string = '', fileName: string = '
     const fc = line.match(reAirlockFileCheck)
     if (fc) {
       push(parseDate(fc[1]), fc[1], airlockFileCheckLevel(fc[2]), 'FILE CHECK', fc[2], rawLine)
+      continue
+    }
+    const mfc = line.match(reAirlockMacFileCheck)
+    if (mfc) {
+      push(parseDate(mfc[1]), mfc[1], airlockFileCheckLevel(mfc[2]), 'FILE CHECK', mfc[2], rawLine)
+      continue
+    }
+    const ie = line.match(reAirlockInfoError)
+    if (ie) {
+      push(parseDate(ie[1]), ie[1], 'ERROR', '', ie[2], rawLine)
       continue
     }
     const aw = line.match(reAirlockWin)

@@ -16,6 +16,7 @@ export const AIRLOCK_FIELD_GROUPS = [
       'Agent Hash',
       'Agent Memory',
       'Kernel Mode',
+      'Tamper Protection',
       'RPC',
       'AutoUpdate Enabled',
       'Server Agent Version',
@@ -62,6 +63,7 @@ export const AIRLOCK_FIELD_GROUPS = [
       'Powershell Constrained Mode',
       'Assembly Reflection Enabled',
       'Extension Blocking',
+      'Script Control',
       'Aggressive Boot',
       'Auto Elevate',
       'File Extensions Added',
@@ -158,11 +160,28 @@ function latestOf(values: string[]): string | null {
   return prev ? `${last} (previously ${prev})` : last
 }
 
-// Linux agent lines: "2026-01-05 10:00:00 INFO  message", also WARN, ERROR, DEBUG and FILE CHECK
+// Linux and macOS agent lines: "2026-01-05 10:00:00 INFO  message", also WARN, ERROR, DEBUG and FILE CHECK
 const reAgentLine = /^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) (INFO|WARN|ERROR|DEBUG|FILE CHECK)\s+(.*)$/
 // FILE CHECK Filename=/usr/bin/ps Hash="<sha256> not found in the database" Type=1 Result="Blocking File - Blocked Execution" Blocking Reasons==> GrandParent="..." Parent="..." Path="..." Publisher="..."
 // FILE CHECK Filename=/usr/bin/cat Hash=<sha256> Type=5 Result="(CACHED) Allowing file to run - Trusted Publisher Execution"
-const reFileCheck = /^Filename=(.+?) Hash=(?:"[^"]*"|\S+) Type=\d+ Result="([^"]*)"(.*)$/
+// A path with a space in it is quoted: Filename="/Volumes/Example App/lib.dylib" Hash=...
+const reFileCheck = /^Filename=(?:"([^"]+)"|(.+?)) Hash=(?:"[^"]*"|\S+) Type=\d+ Result="([^"]*)"(.*)$/
+// Browser extension decisions on macOS are FILE CHECK lines too:
+// FILE CHECK Extension Title="Example" Hash=<sha256> Extension Folder=1.2.3_0 Extension Path="/Users/.../Extensions/<id>" Browser="Google Chrome" Result="Blocking Extension - Blocked Execution"
+// In audit mode the result is "Blocking Extension - Untrusted Execution [Audit]"
+const reExtensionCheck = /^Extension Title=(?:"([^"]*)"|(\S+)) Hash=.* Browser=(?:"([^"]*)"|(\S+)) Result="([^"]*)"/
+// macOS only, seen for Apple's own binaries, on an INFO line:
+// FILE CHECK Filename: /bin/ls, OpType: 11, Result: Allowing file to run - Trusted Execution
+const reMacFileCheck = /^FILE CHECK Filename: (.+), OpType: \d+, Result: (.*)$/
+// What es_new_client() returns when the macOS agent cannot attach to Endpoint Security
+const ES_CLIENT_ERRORS: Record<string, string> = {
+  '1': 'invalid argument',
+  '2': 'internal error',
+  '3': 'not entitled',
+  '4': 'not permitted',
+  '5': 'not privileged',
+  '6': 'too many clients',
+}
 const reGuid = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi
 
 // Windows agent lines are tab-separated: "01/13/2026 9:00:00 AM<TAB>INFO<TAB>1234<TAB>message".
@@ -179,7 +198,7 @@ const reWinPreCheckUser = /, GrandParent: .*?, User: ([^,]+)/
 // In audit mode the result is "Blocking Extension - Untrusted Execution [Audit]"
 const reWinExtension = /^\[EXT-BLOCK\] Extension Title: (.*?), Hash: .*, Browser: (.*?), Result: (.*)$/
 
-function newAgentStats(platform: 'linux' | 'windows') {
+function newAgentStats(platform: 'linux' | 'windows' | 'macos') {
   return {
     platform,
     agentLines: 0,
@@ -254,12 +273,36 @@ function newAgentStats(platform: 'linux' | 'windows') {
     languageModes: [] as string[],
     memory: null as string | null,
     submitted: 0,
+    // Only the macOS agent logs these
+    esFailures: 0,
+    esFailCode: null as string | null,
+    esFailTs: '',
+    // True once an execution has been checked since the last failed attempt to attach to Endpoint Security
+    esChecking: false,
+    protection: null as string | null,
+    prevented: new Map<string, number>(),
+    // Script types the latest policy load switched on or off, e.g. "python" -> true
+    scriptControl: new Map<string, boolean>(),
   }
 }
 
-// One pass over the Linux agent's lines, collecting everything the newer fields need
+// One pass over the Linux or macOS agent's lines, collecting everything the newer fields need.
+// The two agents share most of their lines; the platform is settled by what only macOS writes.
 function collectAgentStats(lines: string[]) {
   const s = newAgentStats('linux')
+  // Counts one execution decision; true when it was a block
+  const tally = (file: string, rawResult: string): boolean => {
+    const result = rawResult.replace(/^\(CACHED\)\s*/, '')
+    s.execs += 1
+    s.esChecking = true
+    bump(s.executed, file)
+    bump(s.results, result)
+    if (!/^Block/i.test(result)) { s.allowed += 1; return false }
+    if (/\[Audit\]/i.test(result)) s.auditBlocked += 1
+    else s.blocked += 1
+    bump(s.blockedFiles, file)
+    return true
+  }
 
   for (const line of lines) {
     const m = reAgentLine.exec(line)
@@ -282,22 +325,30 @@ function collectAgentStats(lines: string[]) {
         s.notifications += 1
       } else if (msg.startsWith('GetAPI:') || msg.startsWith('PostAPI:')) {
         if (!s.clientId && (mm = msg.match(/\/api\/(?:gethashdb|setpolicyver|setsafemode)\/([0-9a-f-]{36})/i))) s.clientId = mm[1]
+      } else if (msg.startsWith('SubmitFile: [')) {
+        s.submitted += 1
+      } else if ((mm = msg.match(/^SetProtection: \[(true|false)\]/))) {
+        s.protection = mm[1] === 'true' ? 'On' : 'Off'
+      } else if (msg.startsWith('ProcessTrustedInstaller: [')) {
+        // First of the settings a policy load writes out; a policy with no script control writes no SetExtScript lines
+        s.scriptControl.clear()
+      } else if ((mm = msg.match(/^SetExtScript - (.+?) enabled: \[(true|false)\]/))) {
+        s.scriptControl.set(mm[1], mm[2] === 'true')
       }
       continue
     }
 
     if (kind === 'FILE CHECK') {
       if (msg.startsWith('Filename="Interop-')) { s.interopChecks += 1; continue }
+      if (msg.startsWith('Extension Title=')) {
+        const ext = reExtensionCheck.exec(msg)
+        if (ext && /^Block/i.test(ext[5])) bump(/\[Audit\]/i.test(ext[5]) ? s.auditExtensions : s.blockedExtensions, `${ext[1] ?? ext[2]}, ${ext[3] ?? ext[4]}`)
+        continue
+      }
       const fc = reFileCheck.exec(msg)
       if (!fc) continue
-      const file = fc[1], result = fc[2].replace(/^\(CACHED\)\s*/, ''), reasons = fc[3]
-      s.execs += 1
-      bump(s.executed, file)
-      bump(s.results, result)
-      if (!/^Block/i.test(result)) { s.allowed += 1; continue }
-      if (/\[Audit\]/i.test(result)) s.auditBlocked += 1
-      else s.blocked += 1
-      bump(s.blockedFiles, file)
+      const reasons = fc[4]
+      if (!tally(fc[1] ?? fc[2], fc[3])) continue
       const parent = reasons.match(/ Parent="(.*?) (?:not )?found in [^"]*"/)
       if (parent) bump(s.blockedParents, parent[1])
       const publisher = reasons.match(/ Publisher="(.*?) (?:not )?found in [^"]*"/)
@@ -309,11 +360,31 @@ function collectAgentStats(lines: string[]) {
     else if (kind === 'WARN') s.warnings += 1
 
     let mm: RegExpMatchArray | null
-    if (msg.startsWith('Starting Airlock Enforcement Agent')) s.starts += 1
+    if (msg.startsWith('FILE CHECK Filename: ')) {
+      if ((mm = reMacFileCheck.exec(msg))) { s.platform = 'macos'; tally(mm[1], mm[2]) }
+    }
+    else if (msg.startsWith('Starting Airlock Enforcement Agent')) { s.starts += 1; s.protection = null }
     else if (msg.startsWith('Closing fanotify')) s.stops += 1
+    // macOS: the agent lets its own stop signal through, e.g. "Unprotected. Allowed Signal 15: /Library/.../AirlockEnforcementAgentCore"
+    else if (/^Unprotected\. Allowed Signal \d+: .*AirlockEnforcementAgentCore$/.test(msg)) s.stops += 1
+    else if ((mm = msg.match(/^ERROR: es_new_client\(\) failed with (\d+)/))) {
+      s.platform = 'macos'
+      s.errors += 1
+      s.esFailures += 1
+      s.esFailCode = mm[1]
+      s.esFailTs = ts
+      s.esChecking = false
+    }
+    else if (msg.startsWith('ERROR: ')) s.errors += 1
+    // Self-protection, e.g. "Prevented Change Dir to: /Library/Airlock Digital"
+    else if ((mm = msg.match(/^Prevented (.+?)\s*$/))) bump(s.prevented, mm[1])
     else if (msg.includes('Setting to Safe Mode')) s.safeModeAt.push(ts)
     // Logged whenever `airlockcmd status` is run: RPC: GetAgentInfo: Server:"..."  ...  GroupParent:"Parent"  GroupName:"Group"  ...
-    else if ((mm = msg.match(/^RPC: GetAgentInfo: .*GroupParent:"([^"]*)"\s+GroupName:"([^"]*)"/))) s.policyGroups.push([mm[1], mm[2]].filter(Boolean).join(' / '))
+    else if ((mm = msg.match(/^RPC: GetAgentInfo: .*GroupParent:"([^"]*)"\s+GroupName:"([^"]*)"/))) {
+      s.policyGroups.push([mm[1], mm[2]].filter(Boolean).join(' / '))
+      const protect = msg.match(/\bProtect:(true|false)\b/)
+      if (protect) s.protection = protect[1] === 'true' ? 'On' : 'Off'
+    }
     else if (msg.startsWith('Refreshing package:')) s.packages += 1
     else if (msg.startsWith('Adding marks to mountpoint:')) s.mountpoints += 1
     else if (msg.startsWith('Debug Logging is now enabled')) s.debugEnabled = true
@@ -325,7 +396,7 @@ function collectAgentStats(lines: string[]) {
     else if ((mm = msg.match(/^RPC communication at port\s*(\d+)/))) s.rpcPort = mm[1]
     else if ((mm = msg.match(/^AutoUpdate: Version available in Server - ([\w.-]+), Current version: ([\w.-]+)/))) { s.serverVersion = mm[1]; s.currentVersion = mm[2] }
     else if ((mm = msg.match(/^Computer Name:\s*(.+)$/))) s.computer = mm[1].trim()
-    else if ((mm = msg.match(/^OS:\s*(.+)$/))) s.os = mm[1].trim()
+    else if ((mm = msg.match(/^OS:\s*(.+)$/))) { s.os = mm[1].trim(); if (s.os.startsWith('macOS')) s.platform = 'macos' }
     else if ((mm = msg.match(/^Linux:\s*(.+)$/))) s.linuxFamily = mm[1].trim()
     else if ((mm = msg.match(/^Kernel:\s*(.+)$/))) s.kernel = mm[1].trim()
     else if ((mm = msg.match(/^CPU Core Count:\s*(\d+)/))) s.cpu = mm[1]
@@ -510,7 +581,26 @@ export function extractAirlockSummary(text: string): Record<(typeof AIRLOCK_FIEL
         if (extensions.size === 0) return null
         return [...extensions].sort((a, b) => b[1] - a[1]).map(([e, c]) => `${e} (${c})`).join('\n')
       }
+      case 'Script Control': {
+        if (stats.scriptControl.size === 0) return null
+        const on = [...stats.scriptControl].filter(([, v]) => v).map(([k]) => k)
+        const off = [...stats.scriptControl].filter(([, v]) => !v).map(([k]) => k)
+        return [on.length ? `On: ${on.join(', ')}` : null, off.length ? `Off: ${off.join(', ')}` : null].filter(Boolean).join('\n')
+      }
+      case 'Tamper Protection': {
+        const actions = [...stats.prevented].sort((a, b) => b[1] - a[1]).map(([a, c]) => `Prevented ${a} (${c})`)
+        if (!stats.protection && actions.length === 0) return null
+        return [stats.protection, ...actions].filter(Boolean).join('\n')
+      }
       case 'Kernel Mode':
+        if (stats.platform === 'macos') {
+          if (stats.esFailures === 0) return 'Endpoint Security'
+          const why = ES_CLIENT_ERRORS[stats.esFailCode ?? ''] ? `error ${stats.esFailCode}, ${ES_CLIENT_ERRORS[stats.esFailCode ?? '']}` : `error ${stats.esFailCode}`
+          const times = `${stats.esFailures} time${stats.esFailures === 1 ? '' : 's'}`
+          return stats.esChecking
+            ? `Endpoint Security (failed to start ${times} first: ${why}, last at ${stats.esFailTs})`
+            : `Endpoint Security did not start (tried ${times}: ${why}, last at ${stats.esFailTs})`
+        }
         if (stats.filterStarted) return 'Filter driver started'
         if (stats.fanotify) return stats.driverError ? 'FANotify (kernel driver did not load)' : 'FANotify'
         return stats.driverError ? 'Kernel driver did not load' : null
@@ -815,9 +905,9 @@ export function extractAirlockSummary(text: string): Record<(typeof AIRLOCK_FIEL
             if (g && /^\d+$/.test(g)) return g
           }
         }
-        // Fallback: count likely lines mentioning browser extensions. [EXT-BLOCK] lines are the Windows agent
-        // working through one extension, not allowlist entries.
-        const count = lines.reduce((acc, l) => acc + (/Browser\s*Extension/i.test(l) && !l.includes('[EXT-BLOCK]') ? 1 : 0), 0)
+        // Fallback: count lines that name an allowlist browser extension. Lines that only mention browser extensions
+        // (a block, the notice shown to the user, "CheckAllowlistBrowserExtensions") are not allowlist entries.
+        const count = lines.reduce((acc, l) => acc + (/Allowlist\s+Browser\s+Extension/i.test(l) ? 1 : 0), 0)
         return count > 0 ? String(count) : null
       }
       case 'Parent Processes': {
@@ -1080,10 +1170,43 @@ function windowsFieldSearchString(key: AirlockField, data: Record<AirlockField, 
   }
 }
 
+// Rows from the macOS agent read like the Linux agent's, apart from the lines only macOS writes
+function isMacSummary(data?: Record<AirlockField, string>): boolean {
+  if (!data) return false
+  return Boolean(data['Operating System']?.startsWith('macOS') || data['Kernel Mode']?.startsWith('Endpoint Security'))
+}
+
+// Searches that differ for the macOS agent; null means the shared one below applies
+function macFieldSearchString(key: AirlockField, data: Record<AirlockField, string>): string | null {
+  switch (key) {
+    case 'Agent Stops':
+      return 'Unprotected\\. Allowed Signal'
+    case 'Kernel Mode':
+      // Nothing is logged when Endpoint Security starts cleanly
+      return data[key].includes('start') ? 'es_new_client\\(\\) failed' : ''
+    case 'Operating System':
+      return 'INFO OS: '
+    // Apple's own binaries are logged as "FILE CHECK Filename: <path>, OpType: 11, Result: ...", the rest the Linux way
+    case 'Execution Count':
+    case 'Execution Results':
+      return 'FILE CHECK Filename(=|: )"?/'
+    case 'Allowed Executions':
+      return 'Result(="|: )(\\(CACHED\\) )?Allow'
+    case 'Top Executed File':
+      return `FILE CHECK Filename(=|: )"?${escapeRegex(data[key].replace(/\s*\(\d+\)\s*$/, ''))}"?(,| Hash=)`
+    default:
+      return null
+  }
+}
+
 // Preferred plain-text search tokens for filtering (non-regex)
 export function getAirlockFieldSearchString(key: (typeof AIRLOCK_FIELDS)[number], data?: Record<(typeof AIRLOCK_FIELDS)[number], string>): string {
   if (data && isWindowsSummary(data) && data[key] && data[key] !== '—') {
     const token = windowsFieldSearchString(key, data)
+    if (token != null) return token
+  }
+  if (data && isMacSummary(data) && data[key] && data[key] !== '—') {
+    const token = macFieldSearchString(key, data)
     if (token != null) return token
   }
   switch (key) {
@@ -1174,7 +1297,7 @@ export function getAirlockFieldSearchString(key: (typeof AIRLOCK_FIELDS)[number]
         const top = data['Top Executed File']
         if (top && top !== '—') {
           const fileOnly = top.replace(/\s*\(\d+\)\s*$/, '')
-          if (fileOnly.startsWith('/')) return '(?i)FILE\\s+CHECK\\s+Filename=/'
+          if (fileOnly.startsWith('/')) return '(?i)FILE\\s+CHECK\\s+Filename="?/'
           if (/^[A-Za-z]:\\|^\\\\/.test(fileOnly)) {
             // Handle both Windows SUCCESS format and non-debug FILE CHECK format
             return '(?i)(FILE\\s+CHECK\\s+\\d+\\s+Filename:|Responding\\s+to\\s+Kernel\\s*~\\s*Filename:.*~\\s*SUCCESS)'
@@ -1190,7 +1313,7 @@ export function getAirlockFieldSearchString(key: (typeof AIRLOCK_FIELDS)[number]
           const top = data['Top Executed File']
           if (top && top !== '—') {
             const fileOnly = top.replace(/\s*\(\d+\)\s*$/, '')
-            if (fileOnly.startsWith('/')) return '(?i)FILE\\s+CHECK\\s+Filename=/'
+            if (fileOnly.startsWith('/')) return '(?i)FILE\\s+CHECK\\s+Filename="?/'
             if (/^[A-Za-z]:\\|^\\\\/.test(fileOnly)) {
               // Handle both Windows SUCCESS format and non-debug FILE CHECK format
               return '(?i)(FILE\\s+CHECK\\s+\\d+\\s+Filename:|Responding\\s+to\\s+Kernel\\s*~\\s*Filename:.*~\\s*SUCCESS)'
@@ -1200,7 +1323,7 @@ export function getAirlockFieldSearchString(key: (typeof AIRLOCK_FIELDS)[number]
         return '(?i)FILE\\s+CHECK\\s+Filename='
       }
       const fileOnly = v.replace(/\s*\(\d+\)\s*$/, '')
-      if (fileOnly.startsWith('/')) return `(?i)FILE\\s+CHECK\\s+Filename=${escapeRegex(fileOnly)}\\s`
+      if (fileOnly.startsWith('/')) return `(?i)FILE\\s+CHECK\\s+Filename="?${escapeRegex(fileOnly)}"?\\s`
       // Handle both Windows SUCCESS format and non-debug FILE CHECK format
       if (/^[A-Za-z]:\\|^\\\\/.test(fileOnly)) {
         return `(?i)(FILE\\s+CHECK\\s+\\d+\\s+Filename:\\s*${escapeRegex(fileOnly)}|Responding\\s+to\\s+Kernel\\s*~\\s*Filename:\\s*${escapeRegex(fileOnly)}\\s*~\\s*SUCCESS)`
@@ -1214,7 +1337,8 @@ export function getAirlockFieldSearchString(key: (typeof AIRLOCK_FIELDS)[number]
     case 'Debug Logging':
       return 'Debug Logging is'
     case 'Errors and Warnings':
-      return '(ERROR|WARN) \\['
+      // ERROR and WARN lines start with [file.go:123]; some failures are written as "INFO  ERROR: ..."
+      return '(ERROR|WARN) (\\[|ERROR: )'
     case 'Agent PID':
       return 'Airlock PID:'
     case 'Agent Hash':
@@ -1260,23 +1384,28 @@ export function getAirlockFieldSearchString(key: (typeof AIRLOCK_FIELDS)[number]
     case 'Policy Id':
       return 'Init Policy:|policyid:'
     case 'Policy Updates':
-      return 'Check In ~ Policy Update'
+      return 'New policy version applied successfully'
     case 'Policy Group':
       return 'GetAgentInfo'
     case 'Safe Mode':
       return 'Safe Mode'
     case 'Allowed Executions':
       return 'Result="(\\(CACHED\\) )?Allow'
+    // "Filename=" keeps browser extension decisions, which are FILE CHECK lines on macOS, out of the execution searches
     case 'Blocked Executions':
-      return 'Result="(\\(CACHED\\) )?Block[^"\\[]*"'
+      return 'Filename=.*Result="(\\(CACHED\\) )?Block[^"\\[]*"'
     case 'Audit Blocks':
-      return '\\[Audit\\]"'
+      return 'Filename=.*\\[Audit\\]"'
+    case 'Blocked Browser Extensions':
+      return 'FILE CHECK Extension Title=.*Result="Block[^"\\[]*"'
+    case 'Audit Browser Extensions':
+      return 'FILE CHECK Extension Title=.*\\[Audit\\]"'
     case 'Execution Results':
-      return 'FILE CHECK Filename=/'
+      return 'FILE CHECK Filename="?/'
     case 'Top Blocked File': {
       const v = data && data[key]
       if (!v || v === '—') return ''
-      return `FILE CHECK Filename=${escapeRegex(v.replace(/\s*\(\d+\)\s*$/, ''))}\\s.*Result="(\\(CACHED\\) )?Block`
+      return `FILE CHECK Filename="?${escapeRegex(v.replace(/\s*\(\d+\)\s*$/, ''))}"?\\s.*Result="(\\(CACHED\\) )?Block`
     }
     case 'Top Blocked Parent': {
       const v = data && data[key]
@@ -1294,6 +1423,12 @@ export function getAirlockFieldSearchString(key: (typeof AIRLOCK_FIELDS)[number]
       return 'Filename="Interop-'
     case 'Block Notifications':
       return 'ES Notify message'
+    case 'Tamper Protection':
+      return 'INFO Prevented |SetProtection: |Protect:(true|false)'
+    case 'Script Control':
+      return 'SetExtScript - '
+    case 'Untrusted Files Submitted':
+      return 'DEBUG SubmitFile: \\['
     default:
       return ''
   }
