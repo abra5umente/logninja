@@ -26,24 +26,28 @@ export const WHATS_NEW: WhatsNewRelease[] = [
     title: 'logninja v2',
     items: [
       {
-        title: 'airlock logs from every platform',
-        body: 'Airlock 7.x debug logs from Windows, Linux and macOS agents now read properly, and the airlock summary fills in agent, host, policy and file check details for each. Click a value to jump to the lines behind it.',
+        title: 'log patterns',
+        body: 'Flip the "rows / patterns" switch above the table and lines that only differ by numbers, ids, IPs or paths fold into one pattern, with a count, level mix and when it showed up. Sort by rarest to find the odd lines out, or by most errors. Click a pattern to see just its rows.',
       },
       {
-        title: 'a fresh look',
-        body: 'A new monospace theme with five palettes (tokyo night, catppuccin, rosé pine, gruvbox and kanagawa), each in light or dark, or following your device. Pick one in settings.',
+        title: 'a new timeline',
+        body: 'Bars are split by level, so bursts of errors stand out. Hover a bar for its counts, click it to zoom in, or drag across bars to zoom into a range. In find mode, your search hits show up under the bars.',
+      },
+      {
+        title: 'airlock logs from every platform',
+        body: 'Airlock 7.x debug logs from Windows, Linux and macOS agents now read properly, and the airlock summary fills in agent, host, policy and file check details for each. Click a value to jump to the lines behind it.',
       },
       {
         title: 'easier query builder',
         body: 'Hit "build query" and list the words a line should have (any or all of them) and the ones it shouldn\'t, with * as a wildcard and a live preview. Name a query to save it: it shows up under presets, and "edit query" reopens it.',
       },
       {
-        title: 'simpler level filters',
-        body: 'Click a level to turn it on or off, as many as you like. Ctrl/Cmd+click shows just that level.',
+        title: 'a fresh look',
+        body: 'A new monospace theme with five palettes (tokyo night, catppuccin, rosé pine, gruvbox and kanagawa), each in light or dark, or following your device. Pick one in settings.',
       },
       {
-        title: 'the table fits the window',
-        body: 'The log table now sizes itself to the window, so the column headings stay put and only the rows scroll.',
+        title: 'smaller things',
+        body: 'Times in the table are now your local time (hover one for the original). Rotated logs like server.log.1 load, and anything that isn\'t a log is skipped with a note. Bookmarks stay on their line when you add another file. A plain click turns a level filter on or off. The table fits the window, so only the rows scroll.',
       },
     ],
   },
