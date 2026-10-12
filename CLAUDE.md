@@ -21,7 +21,7 @@ docker build -t logninja .                # Node 18 build stage -> nginx:alpine 
 docker run --rm -p 8080:80 logninja
 ```
 
-Unit tests use Vitest and sit next to the code they cover (`src/lib/parse.test.ts`, `src/lib/search.test.ts`); they cover pure logic in `src/lib/`, not React components. Run `npm test` and `npm run build` (strict `tsc`, which also type-checks the tests) after changes. There is no linter or formatter. The root `test*.js` files are empty placeholders. `.github/workflows/ci.yml` runs `npm ci`, `npm test` and `npm run build` on every PR and push to `main`; `.github/workflows/container.yml` builds the Docker image on every PR (no registry push) and smoke-tests that nginx serves `index.html`; `.github/workflows/claude.yml` only runs Claude when someone mentions `@claude`.
+Unit tests use Vitest and sit next to the code they cover (`src/lib/parse.test.ts`, `src/lib/search.test.ts`); they cover pure logic in `src/lib/`, not React components. Run `npm test` and `npm run build` (strict `tsc`, which also type-checks the tests) after changes. There is no linter or formatter. The root `test*.js` files are empty placeholders. `.github/workflows/ci.yml` runs `npm ci`, `npm test` and `npm run build` on every PR and push to `main`; `.github/workflows/container.yml` builds the Docker image on every PR, smoke-tests that nginx serves `index.html`, then pushes it to `ghcr.io/abra5umente/logninja` as `pr-<n>` and `sha-<short>` (skipped for fork PRs); `.github/workflows/claude.yml` only runs Claude when someone mentions `@claude`.
 
 ## Architecture
 

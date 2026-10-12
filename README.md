@@ -105,7 +105,7 @@ Highlight search mode:
 - Run the container: `docker run --rm -p 8080:80 logninja`
 - Open http://localhost:8080
 
-Alternatively, run the container using `docker run --rm -p 8080:80 alexschladetsch/logninja:latest`
+Alternatively, every pull request publishes an image to GHCR, tagged with the PR number: `docker run --rm -p 8080:80 ghcr.io/abra5umente/logninja:pr-<number>`
  
 ## Keyboard & Tips
 - `/` focuses search, `Ctrl/Cmd+K` opens command palette
