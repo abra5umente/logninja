@@ -15,6 +15,8 @@ env:
   IMAGE: ghcr.io/${{ github.repository }}
   # Fork PRs get a read-only token, so they build and smoke-test but don't push.
   PUSH: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
+  # Tag sha-<short> with the PR branch's commit, not GitHub's test merge commit.
+  DOCKER_METADATA_PR_HEAD_SHA: true
 
 jobs:
   build:
