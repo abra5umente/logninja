@@ -63,16 +63,23 @@ A fast, client‑side log viewer built with Vite + React + TypeScript. Drag and 
 - **Airlock summary**: Auto-detected for Airlock Digital logs (modal with 71 fields grouped into Agent, Host, Server connection, Policy and Executions; Windows, Linux and macOS agents, including 7.x debug logs from all three). Click a value to search the log for the lines behind it
 
 ## Screenshots
-Enhanced Airlock Digital log support:
-<img width="1722" height="898" alt="Untitled" src="https://github.com/user-attachments/assets/07732c55-1641-40c9-b96c-7559745a7d94" />  
-Log Summary view:
-<img width="1723" height="895" alt="Untitled" src="https://github.com/user-attachments/assets/d29c693d-6035-4fbd-a5f9-b3d6ca9bbb4f" />  
-Markdown Summary export view:
-<img width="1722" height="892" alt="Untitled" src="https://github.com/user-attachments/assets/ea9e6e09-a7a4-4ef9-9080-07ba479a41dc" />  
+Two logs loaded together, with find mode jumping between search hits, the log summary and the timeline:
+![Main view with two files loaded, a find search, the log summary and the timeline](docs/screenshots/main-view.png)
+
+Highlight-only regex search, drilled into fifteen minutes of the timeline (gruvbox, light):
+![Highlight-only regex search with the timeline drilled into minutes](docs/screenshots/highlight-search.png)
+
+The query builder, with any-of terms, an exclusion and a live preview:
+![Query builder with three terms, one exclusion and a preview of matching lines](docs/screenshots/query-builder.png)
+
+Airlock Digital agent summary, opened automatically for Airlock debug logs:
+![Airlock debug summary window showing agent and host details](docs/screenshots/airlock-summary.png)
+
+Markdown summary export:
+![Markdown summary export window](docs/screenshots/markdown-summary.png)
+
 Settings with system / light / dark modes and five colour palettes:
-<img width="1723" height="896" alt="Untitled" src="https://github.com/user-attachments/assets/57ec2c79-c6da-499e-b930-806a8770eaba" />  
-Highlight search mode:
-<img width="1723" height="899" alt="Untitled" src="https://github.com/user-attachments/assets/4b4c73d2-a22a-4311-94e7-e64f9f58b847" />  
+![Settings panel with appearance, palette and keymap](docs/screenshots/settings.png)
 
 ## Supported Formats (non‑exhaustive)
 - ISO/RFC3339, `YYYY-MM-DD HH:mm:ss[.SSS|,SSS]`
