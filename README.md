@@ -72,11 +72,14 @@ A fast, client‑side log viewer built with Vite + React + TypeScript. Drag and 
 - **Airlock summary**: Auto-detected for Airlock Digital logs (modal with 71 fields grouped into Agent, Host, Server connection, Policy and Executions; Windows, Linux and macOS agents, including 7.x debug logs from all three). Click a value to search the log for the lines behind it
 
 ## Screenshots
-Two logs loaded together, with find mode jumping between search hits, the log summary and the timeline:
+Two logs loaded together, with find mode jumping between search hits, the log summary and the stacked timeline with search hits marked under it:
 ![Main view with two files loaded, a find search, the log summary and the timeline](docs/screenshots/main-view.png)
 
-Highlight-only regex search, drilled into fifteen minutes of the timeline (gruvbox, light):
-![Highlight-only regex search with the timeline drilled into minutes](docs/screenshots/highlight-search.png)
+Highlight-only regex search after dragging across the timeline to pick half an hour (gruvbox, light):
+![Highlight-only regex search with the timeline zoomed into a half-hour range](docs/screenshots/highlight-search.png)
+
+The patterns view, which groups similar lines and shows when each one happened:
+![Patterns view listing grouped log lines with counts and sparklines](docs/screenshots/patterns.png)
 
 The query builder, with any-of terms, an exclusion and a live preview:
 ![Query builder with three terms, one exclusion and a preview of matching lines](docs/screenshots/query-builder.png)
