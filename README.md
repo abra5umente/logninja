@@ -41,6 +41,15 @@ A fast, client‑side log viewer built with Vite + React + TypeScript. Drag and 
 - **Time range filtering** by clicking or dragging on the timeline
 - **Reset button**: Clears all filters (search, files, levels, time range) at once
 
+### Log Patterns
+- **Patterns view** (the "rows / patterns" switch above the table, or "Show Log Patterns" in the command palette): lines that differ only in their variable parts collapse into one pattern, e.g. `request completed in <n>ms`
+  - Numbers, IPs, UUIDs, hashes, timestamps, emails, URLs, file paths and session-style ids are blanked out; everything else (like `Result=Blocked` vs `Result=Allowed`) keeps patterns apart
+  - Each pattern shows its count and share of rows, level mix, first and last seen, and a sparkline of when it shows up
+  - Sort by most common, **rarest** (the odd lines out), most errors, or newest (patterns that first appeared latest)
+  - Click a pattern to filter the table to its rows (via a regex in the search box); "first row" jumps to its first occurrence
+  - Works on whatever the other filters leave, so drag a range on the timeline to see what was happening in a burst
+  - Stack traces group by their first line; big files are grouped in slices so the page stays responsive
+
 ### Timeline & Navigation
 - **Stacked timeline**: each bar is split by level (errors and warnings on the baseline), so bursts of errors stand out at a glance
   - Bar width adapts to what you're looking at (1 sec up to days), always lined up with your local clock

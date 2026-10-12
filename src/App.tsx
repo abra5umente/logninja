@@ -5,6 +5,8 @@ import VirtualTable from './components/VirtualTable'
 import { parseLog } from './lib/parse'
 import { FiltersState, LogEntry, LogLevel, FileInfo } from './lib/types'
 import TimelinePanel from './components/TimelinePanel'
+import PatternsPanel from './components/PatternsPanel'
+import ViewSwitch, { CenterView } from './components/ViewSwitch'
 import PresetsDropdown from './components/PresetsDropdown'
 import { buildSearchRegex } from './lib/search'
 import { nextLevelSelection } from './lib/levelSelection'
@@ -61,6 +63,7 @@ export default function App() {
   const bookmarkedRows = useMemo(() => entries.filter(e => bookmarked.has(e.index)), [entries, bookmarked])
   const toggleBookmark = (idx: number) => setBookmarked(prev => { const n = new Set(prev); if (n.has(idx)) n.delete(idx); else n.add(idx); return n })
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null)
+  const [centerView, setCenterView] = useState<CenterView>('rows')
   const [isDraggingGlobal, setIsDraggingGlobal] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [loadingStage, setLoadingStage] = useState<'idle' | 'loading' | 'complete'>('idle')
@@ -503,7 +506,15 @@ export default function App() {
     })
   }
 
+  // From the patterns view: filter the table to one pattern's rows via the search box,
+  // so the query stays visible and editable.
+  const showPatternRows = (regex: string) => {
+    setFilters(f => ({ ...f, query: regex, useRegex: true, searchMode: 'filter', highlightOnly: false, currentMatchIndex: 0 }))
+    setCenterView('rows')
+  }
+
   const commands: CommandItem[] = [
+    { id: 'toggle-patterns', label: centerView === 'patterns' ? 'Show Log Rows' : 'Show Log Patterns', run: () => setCenterView(v => (v === 'patterns' ? 'rows' : 'patterns')) },
     { id: 'toggle-highlight', label: filters.highlightOnly ? 'Disable Highlight Only' : 'Enable Highlight Only', run: () => setFilters(f => ({ ...f, highlightOnly: !f.highlightOnly })) },
     { id: 'clear-filters', label: 'Clear Filters', run: runClearFilters },
     { id: 'export-csv', label: 'Export CSV (filtered)', run: runDownloadCsv },
@@ -680,21 +691,32 @@ export default function App() {
           <main className="flex flex-col gap-3 min-h-0 overflow-hidden">
             {/* Virtual Table */}
             <div ref={tableWrapRef} className="relative flex-1 min-h-0">
-              <VirtualTable
-                rows={filtered}
-                height={tableHeight}
-                highlightRe={highlightRe}
-                bookmarked={bookmarked}
-                onToggleBookmark={toggleBookmark}
-                selectedIndex={selectedIndex}
-                onSelectRow={setSelectedIndex}
-                loadedFiles={loadedFiles}
-                showBookmarksOnly={filters.showBookmarksOnly}
-                onShowBookmarksOnlyChange={(checked) => setFilters(f => ({ ...f, showBookmarksOnly: checked }))}
-                bookmarkContext={filters.bookmarkContext}
-                onBookmarkContextChange={(context) => setFilters(f => ({ ...f, bookmarkContext: context }))}
-                bookmarkCount={bookmarked.size}
-              />
+              {centerView === 'patterns' ? (
+                <PatternsPanel
+                  rows={filtered}
+                  height={tableHeight}
+                  onShowRows={showPatternRows}
+                  onJumpTo={(index) => { setSelectedIndex(index); setCenterView('rows') }}
+                  headerControls={<ViewSwitch view={centerView} onChange={setCenterView} />}
+                />
+              ) : (
+                <VirtualTable
+                  rows={filtered}
+                  height={tableHeight}
+                  highlightRe={highlightRe}
+                  bookmarked={bookmarked}
+                  onToggleBookmark={toggleBookmark}
+                  selectedIndex={selectedIndex}
+                  onSelectRow={setSelectedIndex}
+                  loadedFiles={loadedFiles}
+                  showBookmarksOnly={filters.showBookmarksOnly}
+                  onShowBookmarksOnlyChange={(checked) => setFilters(f => ({ ...f, showBookmarksOnly: checked }))}
+                  bookmarkContext={filters.bookmarkContext}
+                  onBookmarkContextChange={(context) => setFilters(f => ({ ...f, bookmarkContext: context }))}
+                  bookmarkCount={bookmarked.size}
+                  headerControls={<ViewSwitch view={centerView} onChange={setCenterView} />}
+                />
+              )}
 
               {/* Empty State Overlay */}
               {entries.length === 0 && (

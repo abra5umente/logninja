@@ -16,6 +16,8 @@ interface Props {
 const STACK_ORDER: LogLevel[] = ['ERROR', 'WARN', 'INFO', 'DEBUG', 'TRACE', 'UNKNOWN']
 const CHART_H = 64
 const LABEL_PX = 84
+// rough width of one axis-label character (10px monospace)
+const CHAR_PX = 6.2
 
 const overlaps = (b: TimelineBin, r: TimeRange) => b.start < r.end && b.end > r.start
 
@@ -179,13 +181,19 @@ export default function TimelinePanel({ entries, isMatch, onSelectRange, activeR
 
   const labelEvery = Math.max(1, Math.ceil(LABEL_PX / (chartW / Math.max(1, bins.length))))
   const ticks: { i: number; text: string }[] = []
+  const barW = chartW / Math.max(1, bins.length)
   let prevTick: Date | null = null
+  let prevEnd = -Infinity
   for (let i = 0; i < bins.length; i += labelEvery) {
-    // skip a label that would run off the right edge
-    if ((bins.length - i) * (chartW / bins.length) < LABEL_PX * 0.6 && i !== 0) break
     const d = bins[i].start
-    ticks.push({ i, text: formatTick(d, binMs, !prevTick || !sameLocalDay(prevTick, d)) })
+    const text = formatTick(d, binMs, !prevTick || !sameLocalDay(prevTick, d))
+    const x = i * barW
+    const w = text.length * CHAR_PX + 8
+    // skip a label that would overlap the previous one (a dated label is wider) or run off the right edge
+    if (x < prevEnd || (i !== 0 && x + w > chartW)) continue
+    ticks.push({ i, text })
     prevTick = d
+    prevEnd = x + w
   }
 
   const zoomed = !!view || !!activeRange
