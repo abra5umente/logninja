@@ -83,6 +83,66 @@ describe('parseLog: Airlock agent lines', () => {
   })
 })
 
+describe('parseLog: Airlock macOS agent lines', () => {
+  it('reads the INFO form of FILE CHECK, used for Apple binaries, as an execution decision', () => {
+    const [entry] = parseLog('2026-01-05 10:00:03 INFO  FILE CHECK Filename: /System/Applications/Error Info.app/Contents/MacOS/Error Info, OpType: 11, Result: Allowing file to run - Trusted Execution')
+    expect(entry.time?.getTime()).toBe(new Date(2026, 0, 5, 10, 0, 3).getTime())
+    expect(entry.level).toBe('INFO')
+    expect(entry.source).toBe('FILE CHECK')
+    expect(entry.message).toBe('FILE CHECK Filename: /System/Applications/Error Info.app/Contents/MacOS/Error Info, OpType: 11, Result: Allowing file to run - Trusted Execution')
+  })
+
+  it('takes the level of that form from the result too', () => {
+    const levels = parseLog([
+      '2026-01-05 10:00:03 INFO  FILE CHECK Filename: /bin/ls, OpType: 11, Result: Allowing file to run - Trusted Execution',
+      '2026-01-05 10:00:04 INFO  FILE CHECK Filename: /bin/ls, OpType: 11, Result: Blocking File - Blocked Execution',
+      '2026-01-05 10:00:05 INFO  FILE CHECK Filename: /bin/ls, OpType: 11, Result: Blocking File - Untrusted Execution [Audit]',
+    ].join('\n')).map(e => e.level)
+    expect(levels).toEqual(['INFO', 'ERROR', 'WARN'])
+  })
+
+  it('marks a blocked browser extension as an error, and as a warning in audit mode', () => {
+    const ext = (result: string) =>
+      `2026-01-05 10:00:06 FILE CHECK Extension Title="Error Info Helper" Hash=${'ab'.repeat(32)} Extension Folder=1.2.3_0 Extension Path="/Users/tester/Library/Application Support/Google/Chrome/Default/Extensions/abcdefghijklmnopabcdefghijklmnop" Browser="Google Chrome" Result="${result}"`
+    const entries = parseLog([ext('Blocking Extension - Blocked Execution'), ext('Blocking Extension - Untrusted Execution [Audit]')].join('\n'))
+    expect(entries.map(e => e.level)).toEqual(['ERROR', 'WARN'])
+    expect(entries[0].source).toBe('FILE CHECK')
+    expect(entries[0].message.startsWith('FILE CHECK Extension Title="Error Info Helper" Hash=')).toBe(true)
+  })
+
+  it('keeps a quoted file name, used when the path has a space, in the message', () => {
+    const [entry] = parseLog(`2026-01-05 10:00:07 FILE CHECK Filename="/Applications/Example App.app/Contents/MacOS/Example App" Hash=${'cd'.repeat(32)} Type=5 Result="Allowing file to run - Trusted Publisher Execution"`)
+    expect(entry.level).toBe('INFO')
+    expect(entry.message.startsWith('FILE CHECK Filename="/Applications/Example App.app/Contents/MacOS/Example App" Hash=')).toBe(true)
+  })
+
+  it('marks "INFO  ERROR: ..." lines as errors', () => {
+    const entries = parseLog([
+      '2026-01-05 10:00:00 INFO  ERROR: es_new_client() failed with 4',
+      '2026-01-05 10:00:00 INFO  es_new_client() start failed',
+    ].join('\n'))
+    expect(entries.map(e => e.level)).toEqual(['ERROR', 'INFO'])
+    expect(entries[0].message).toBe('ERROR: es_new_client() failed with 4')
+  })
+
+  it('keeps a multi-line debug dump as one row', () => {
+    const entries = parseLog([
+      '2026-01-05 10:00:00 DEBUG UploadXML: [<?xml version="1.0" encoding="UTF-8"?>',
+      '<ResultsSection>',
+      '  <file>',
+      '    <path><![CDATA[/Users/Shared/example/run.sh]]></path>',
+      '  </file>',
+      '</ResultsSection>]',
+      '2026-01-05 10:00:01 DEBUG ERROR: %s',
+      ': [open /private/var/example: operation not permitted]',
+      '2026-01-05 10:00:02 INFO  Check In ~ Report Status ~ Reporting agent status to server',
+    ].join('\n'))
+    expect(entries.map(e => e.level)).toEqual(['DEBUG', 'DEBUG', 'INFO'])
+    expect(entries[0].message.endsWith('</ResultsSection>]')).toBe(true)
+    expect(entries[1].message).toBe('ERROR: %s\n: [open /private/var/example: operation not permitted]')
+  })
+})
+
 describe('parseLog: Airlock Windows agent lines', () => {
   // Made-up lines in the Windows agent's tab-separated format
   const w = (ts: string, kind: string, thread: number, msg: string) => `${ts}\t${kind}\t${thread}\t${msg}`
