@@ -244,6 +244,13 @@ const WIN_LOG = [
   w('9:00:02 AM', 'DEBUG', 100, '[CONSTRAINED-MODE] Setting Powershell Language Mode to default...'),
   w('9:00:02 AM', 'INFO', 100, 'Adding File Extension: ps1'),
   w('9:00:02 AM', 'INFO', 100, 'Adding File Extension: bat'),
+  w('9:00:02 AM', 'INFO', 100, 'Loading Publishers'),
+  w('9:00:02 AM', 'INFO', 100, 'Loading Publishers'),
+  w('9:00:02 AM', 'INFO', 100, 'Loading Path Exclusions'),
+  w('9:00:02 AM', 'INFO', 100, 'Loading Blocklist Pathrules'),
+  w('9:00:02 AM', 'INFO', 100, 'Loading Blocklist Pathrules'),
+  w('9:00:02 AM', 'INFO', 100, 'Loading Blocklist Pathrules'),
+  w('9:00:02 AM', 'INFO', 100, 'Loading Blocklist Metarules'),
   w('9:00:02 AM', 'DEBUG', 100, 'Extension Blocking is enabled for audit'),
   w('9:00:02 AM', 'INFO', 100, 'Assembly Reflection: ON'),
   w('9:00:02 AM', 'INFO', 100, 'Self Service enabled for all'),
@@ -280,6 +287,8 @@ const WIN_LOG = [
   winReasons(TOOL, 'Not Signed', EXPLORER),
   winCheck('9:02:01 AM', SCRIPT, 'Blocking File - Constrained Execution', 14),
   winReasons(SCRIPT, 'Not Signed', POWERSHELL),
+  w('9:02:02 AM', 'INFO', 300, `[EXT-BLOCK] Extension Title: Example Tabs, Hash: ${h('cd')}, Extension Folder: \\Users\\tester\\AppData\\Local\\Microsoft\\Edge\\User Data\\Default\\Extensions\\${EXT_ID}, Extension Path: C:\\Users\\tester\\AppData\\Local\\Temp\\scoped_dir1_2\\${EXT_ID}_1.crx, Browser: Microsoft Edge, Result: Blocking Extension - Untrusted Execution [Audit]`),
+  w('9:02:02 AM', 'INFO', 300, '[EXT-BLOCK] Browser extension passed all metarule criteria for example.exe origname[cccccccc-0000-0000-0000-000000000001] but metarule does not have extension ID rule hence it will not apply to extension: Example Tabs'),
   w('9:05:00 AM', 'INFO', 200, 'Check In ~ Policy Update ~ There is a new policy version available 41'),
   w('9:05:00 AM', 'INFO', 200, 'Auditmode: false'),
   w('9:05:00 AM', 'DEBUG', 200, '[CONSTRAINED-MODE] Setting Powershell Language Mode to Constrained Language...'),
@@ -344,7 +353,10 @@ describe('extractAirlockSummary: Windows 7.x agent debug log', () => {
     expect(s['Audit Mode']).toBe('No (changed from Yes at 01/13/2026 9:05:00 AM)')
     expect(s['Self Service Enabled']).toBe('No (previously Yes (all))')
     expect(s['Powershell Constrained Mode']).toBe('Constrained Language (previously default)')
-    expect(s['Blocklist Metarules loaded']).toBe('1 (seen in rule checks)')
+    expect(s['Publishers Loaded']).toBe('2 (at last policy load)')
+    expect(s['Path Exclusions']).toBe('1 (at last policy load)')
+    expect(s['Blocklist Metarules loaded']).toBe('1 (at last policy load)')
+    expect(s['Blocklist Pathrules loaded']).toBe('3 (at last policy load)')
     expect(s['Assembly Reflection Enabled']).toBe('Yes')
     expect(s['Extension Blocking']).toBe('Enabled for audit (logged at 01/13/2026 9:00:02 AM)')
     expect(s['Aggressive Boot']).toBe('No (previously Yes)')
@@ -372,6 +384,8 @@ describe('extractAirlockSummary: Windows 7.x agent debug log', () => {
     expect(s['Top Blocked Publisher']).toBe('Not Signed (5)')
     expect(s['Users Seen']).toBe('tester, SYSTEM')
     expect(s['Blocked Browser Extensions']).toBe('Example Helper, Microsoft Edge (1)')
+    expect(s['Audit Browser Extensions']).toBe('Example Tabs, Microsoft Edge (1)')
+    expect(s['Allowlist Browser Extensions loaded']).toBe('—')
     expect(s['Untrusted Files Submitted']).toBe('1')
   })
 
@@ -394,13 +408,34 @@ describe('extractAirlockSummary: Windows 7.x agent debug log', () => {
     expect(hits('Blocked Executions')).toBe(4)
     expect(hits('Audit Blocks')).toBe(1)
     expect(hits('Constrained Executions')).toBe(1)
+    expect(hits('Publishers Loaded')).toBe(2)
+    expect(hits('Path Exclusions')).toBe(1)
     expect(hits('Blocklist Metarules loaded')).toBe(1)
+    expect(hits('Blocklist Pathrules loaded')).toBe(3)
     expect(hits('Top Executed File')).toBe(3)
     expect(hits('Top Blocked File')).toBe(3)
     expect(hits('Top Blocked Parent')).toBe(4)
     expect(hits('Top Blocked Publisher')).toBe(5)
     expect(hits('Blocked Browser Extensions')).toBe(1)
+    expect(hits('Audit Browser Extensions')).toBe(1)
     expect(hits('Untrusted Files Submitted')).toBe(1)
+  })
+
+  it('counts what the latest policy load brought in, not every load in the log', () => {
+    const db = `Opening Policy database: ${W_DB}\\${W_CLIENT}.db`
+    const s2 = extractAirlockSummary([
+      w('9:00:00 AM', 'INFO', 1, db),
+      w('9:00:00 AM', 'INFO', 1, 'Loading Publishers'),
+      w('9:00:00 AM', 'INFO', 1, 'Loading Publishers'),
+      w('9:00:00 AM', 'INFO', 1, 'Loading Path Exclusions'),
+      w('9:10:00 AM', 'INFO', 1, db),
+      w('9:10:00 AM', 'INFO', 1, 'Loading Publishers'),
+      w('9:10:01 AM', 'DEBUG', 2, 'Filename: C:\\Tools\\a.exe start blocklist processing...'),
+      w('9:10:01 AM', 'DEBUG', 2, 'Filename: C:\\Tools\\a.exe, Package: 1, Metarule: example[cccccccc-0000-0000-0000-000000000001] Check: origname match example'),
+    ].join('\r\n'))
+    expect(s2['Publishers Loaded']).toBe('1 (at last policy load)')
+    expect(s2['Path Exclusions']).toBe('—')
+    expect(s2['Blocklist Metarules loaded']).toBe('1 (seen in rule checks)')
   })
 
   it('leaves the fields only the Linux agent logs empty', () => {

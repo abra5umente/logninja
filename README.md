@@ -58,7 +58,7 @@ A fast, client‑side log viewer built with Vite + React + TypeScript. Drag and 
 - Copy all filtered entries to clipboard
 
 ### Special Features
-- **Airlock summary**: Auto-detected for Airlock Digital logs (modal with 67 fields grouped into Agent, Host, Server connection, Policy and Executions; Windows + Linux agents, including 7.x debug logs from both). Click a value to search the log for the lines behind it
+- **Airlock summary**: Auto-detected for Airlock Digital logs (modal with 69 fields grouped into Agent, Host, Server connection, Policy and Executions; Windows + Linux agents, including 7.x debug logs from both). Click a value to search the log for the lines behind it
 
 ## Screenshots
 Enhanced Airlock Digital log support:

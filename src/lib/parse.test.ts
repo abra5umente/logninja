@@ -146,10 +146,14 @@ describe('parseLog: Airlock Windows agent lines', () => {
     expect(entries[0].message.split('\n')[1]).toBe(reasons('C:\\Tools\\a.exe'))
   })
 
-  it('marks a blocked browser extension as an error', () => {
-    const [entry] = parseLog(w('01/13/2026 9:00:05 AM', 'INFO', 7, `[EXT-BLOCK] Extension Title: Example Helper, Hash: ${hash}, Extension Folder: \\Users\\tester\\Extensions\\abc, Extension Path: C:\\Temp\\abc_1.crx, Browser: Microsoft Edge, Result: Blocking Extension - Blocked Execution`))
-    expect(entry.level).toBe('ERROR')
-    expect(entry.message.startsWith('[7] [EXT-BLOCK] Extension Title: Example Helper')).toBe(true)
+  it('marks a blocked browser extension as an error, and as a warning in audit mode', () => {
+    const ext = (result: string) => w('01/13/2026 9:00:05 AM', 'INFO', 7, `[EXT-BLOCK] Extension Title: Example Helper, Hash: ${hash}, Extension Folder: \\Users\\tester\\Extensions\\abc, Extension Path: C:\\Temp\\abc_1.crx, Browser: Microsoft Edge, Result: ${result}`)
+    const entries = parseLog([
+      ext('Blocking Extension - Blocked Execution'),
+      ext('Blocking Extension - Untrusted Execution [Audit]'),
+    ].join('\r\n'))
+    expect(entries.map(e => e.level)).toEqual(['ERROR', 'WARN'])
+    expect(entries[0].message.startsWith('[7] [EXT-BLOCK] Extension Title: Example Helper')).toBe(true)
   })
 
   it('keeps tabs inside a message and skips the blank line the agent writes after it', () => {

@@ -69,6 +69,7 @@ export const AIRLOCK_FIELD_GROUPS = [
       'Path Exclusions',
       'Parent Processes',
       'Blocklist Metarules loaded',
+      'Blocklist Pathrules loaded',
       'Allowlist Metarules loaded',
       'Allowlist Browser Extensions loaded',
       'Interops Found',
@@ -92,6 +93,7 @@ export const AIRLOCK_FIELD_GROUPS = [
       'Interop Checks',
       'Block Notifications',
       'Blocked Browser Extensions',
+      'Audit Browser Extensions',
       'Untrusted Files Submitted',
     ],
   },
@@ -174,6 +176,7 @@ const reWinFileCheck = /^Filename: (.+?), Hash: .*?\bResult: (.*)$/
 const reWinPreCheckUser = /, GrandParent: .*?, User: ([^,]+)/
 // Browser extension decisions are INFO lines:
 // [EXT-BLOCK] Extension Title: Example, Hash: <sha256>, Extension Folder: \Users\..., Extension Path: C:\...\x.crx, Browser: Microsoft Edge, Result: Blocking Extension - Blocked Execution
+// In audit mode the result is "Blocking Extension - Untrusted Execution [Audit]"
 const reWinExtension = /^\[EXT-BLOCK\] Extension Title: (.*?), Hash: .*, Browser: (.*?), Result: (.*)$/
 
 function newAgentStats(platform: 'linux' | 'windows') {
@@ -244,7 +247,10 @@ function newAgentStats(platform: 'linux' | 'windows') {
     autoElevate: [] as string[],
     interopNames: new Set<string>(),
     blockedExtensions: new Map<string, number>(),
+    auditExtensions: new Map<string, number>(),
     constrained: 0,
+    // Items loaded by the latest policy load, by kind ("Publishers", "Path Exclusions", ...)
+    loaded: new Map<string, number>(),
     languageModes: [] as string[],
     memory: null as string | null,
     submitted: 0,
@@ -425,6 +431,8 @@ function collectWindowsAgentStats(lines: string[]) {
       if (mm[1]) s.os = mm[1].trim()
     }
     else if (msg.startsWith('Airlock Digital - Closed!')) s.stops += 1
+    // 7.x no longer names what a policy load brings in: it writes one bare "Loading Publishers" style line per item
+    else if ((mm = msg.match(/^Loading ((?:Publishers|Path Exclusions|(?:Blocklist|Allowlist) (?:Metarules|Pathrules)))$/))) bump(s.loaded, mm[1])
     else if (msg.startsWith('Sent Signal for Kernel to start')) s.filterStarted = true
     else if ((mm = msg.match(/^Computer Name:\s*([^,]+)/))) s.computer = mm[1].trim()
     else if ((mm = msg.match(/^Local IP:\s*(\S+)/))) s.ip = mm[1]
@@ -436,7 +444,7 @@ function collectWindowsAgentStats(lines: string[]) {
     }
     else if (msg.startsWith('Check In ~ Report Status')) s.checkIns += 1
     // The policy database is named after the client id, the hash database after the policy id
-    else if ((mm = msg.match(/^Opening Policy database: .*?([0-9a-f-]{36})\.db$/i))) { if (!s.clientId) s.clientId = mm[1] }
+    else if ((mm = msg.match(/^Opening Policy database: .*?([0-9a-f-]{36})\.db$/i))) { if (!s.clientId) s.clientId = mm[1]; s.loaded.clear() }
     else if ((mm = msg.match(/^Initializing Hash database: .*?([0-9a-f-]{36})\.db$/i))) s.policyIds.push(mm[1])
     else if ((mm = msg.match(/Client was moved to a new policy with policyid:\s*([0-9a-f-]{36})/i))) s.policyIds.push(mm[1])
     else if ((mm = msg.match(/^Policy version retrieval - .* Policy Version: (\d+)$/))) s.policyVersions.push(mm[1])
@@ -453,7 +461,9 @@ function collectWindowsAgentStats(lines: string[]) {
     else if ((mm = msg.match(/^Aggressive Boot (?:is|was successfully) (enabled|disabled)/i))) s.aggressiveBoot.push(mm[1].toLowerCase() === 'enabled' ? 'Yes' : 'No')
     else if ((mm = msg.match(/^Current Stats ~ Virtual Memory: (\d+) Physical Memory: (\d+) Handles: (\d+)/))) s.memory = `${mb(mm[2])} MB physical, ${mb(mm[1])} MB virtual, ${mm[3]} handles`
     else if ((mm = msg.match(/^(.+?) Interop Detection: found/))) s.interopNames.add(mm[1].trim())
-    else if ((mm = reWinExtension.exec(msg))) { if (/^Block/i.test(mm[3])) bump(s.blockedExtensions, `${mm[1]}, ${mm[2]}`) }
+    else if ((mm = reWinExtension.exec(msg))) {
+      if (/^Block/i.test(mm[3])) bump(/\[Audit\]/i.test(mm[3]) ? s.auditExtensions : s.blockedExtensions, `${mm[1]}, ${mm[2]}`)
+    }
     else if (msg.includes('Uploading Events ~ Submitting untrusted file:')) s.submitted += 1
   }
   return s
@@ -464,6 +474,7 @@ export function extractAirlockSummary(text: string): Record<(typeof AIRLOCK_FIEL
   const linuxStats = collectAgentStats(lines)
   const stats = linuxStats.agentLines > 0 ? linuxStats : collectWindowsAgentStats(lines)
   const count = (n: number) => (n > 0 ? String(n) : null)
+  const loaded = (kind: string) => (stats.loaded.has(kind) ? `${stats.loaded.get(kind)} (at last policy load)` : null)
   const get = (key: (typeof AIRLOCK_FIELDS)[number]): string | null => {
     switch (key) {
       case 'Agent Starts':
@@ -494,8 +505,11 @@ export function extractAirlockSummary(text: string): Record<(typeof AIRLOCK_FIEL
       case 'Untrusted Files Submitted':
         return count(stats.submitted)
       case 'Blocked Browser Extensions':
-        if (stats.blockedExtensions.size === 0) return null
-        return [...stats.blockedExtensions].sort((a, b) => b[1] - a[1]).map(([e, c]) => `${e} (${c})`).join('\n')
+      case 'Audit Browser Extensions': {
+        const extensions = key === 'Blocked Browser Extensions' ? stats.blockedExtensions : stats.auditExtensions
+        if (extensions.size === 0) return null
+        return [...extensions].sort((a, b) => b[1] - a[1]).map(([e, c]) => `${e} (${c})`).join('\n')
+      }
       case 'Kernel Mode':
         if (stats.filterStarted) return 'Filter driver started'
         if (stats.fanotify) return stats.driverError ? 'FANotify (kernel driver did not load)' : 'FANotify'
@@ -554,6 +568,8 @@ export function extractAirlockSummary(text: string): Record<(typeof AIRLOCK_FIEL
         return stats.execs > 0 ? String(stats.blocked) : null
       case 'Audit Blocks':
         return stats.execs > 0 ? String(stats.auditBlocked) : null
+      case 'Blocklist Pathrules loaded':
+        return loaded('Blocklist Pathrules')
       case 'Constrained Executions':
         return stats.platform === 'windows' && stats.execs > 0 ? String(stats.constrained) : null
       case 'Execution Results':
@@ -699,6 +715,7 @@ export function extractAirlockSummary(text: string): Record<(typeof AIRLOCK_FIEL
         return m ? String(m[1]) : null
       }
       case 'Publishers Loaded': {
+        if (stats.loaded.has('Publishers')) return loaded('Publishers')
         const count = lines.reduce((acc, l) => acc + (/\bLoading\s+Publisher:\s*/i.test(l) ? 1 : 0), 0)
         if (count > 0) return String(count)
         // Non-debug Airlock: tab-separated INFO lines with Found Publisher
@@ -710,6 +727,7 @@ export function extractAirlockSummary(text: string): Record<(typeof AIRLOCK_FIEL
         return m ? String(m[1]) : null
       }
       case 'Path Exclusions': {
+        if (stats.loaded.has('Path Exclusions')) return loaded('Path Exclusions')
         // Count exclusions; do not show actual data
         let count = 0
         for (const l of lines) {
@@ -744,6 +762,7 @@ export function extractAirlockSummary(text: string): Record<(typeof AIRLOCK_FIEL
         return m ? String(normalizeBool(m[1] as any)) : null
       }
       case 'Blocklist Metarules loaded': {
+        if (stats.loaded.has('Blocklist Metarules')) return loaded('Blocklist Metarules')
         const m = findFirst(lines, [
           /blocklist\s*metarules?\s*(?:loaded|count)[:=\s]+(\d+)/i,
           /Blocklist\s*Metarules\s*loaded:\s*(\d+)/i,
@@ -764,6 +783,7 @@ export function extractAirlockSummary(text: string): Record<(typeof AIRLOCK_FIEL
         return stats.blockMetarules.size > 0 ? `${stats.blockMetarules.size} (seen in rule checks)` : null
       }
       case 'Allowlist Metarules loaded': {
+        if (stats.loaded.has('Allowlist Metarules')) return loaded('Allowlist Metarules')
         // Numeric total if present
         const m = findFirst(lines, [
           /allowlist\s*metarules?\s*(?:loaded|count)[:=\s]+(\d+)/i,
@@ -795,8 +815,9 @@ export function extractAirlockSummary(text: string): Record<(typeof AIRLOCK_FIEL
             if (g && /^\d+$/.test(g)) return g
           }
         }
-        // Fallback: count likely lines mentioning browser extensions
-        const count = lines.reduce((acc, l) => acc + (/Browser\s*Extension/i.test(l) ? 1 : 0), 0)
+        // Fallback: count likely lines mentioning browser extensions. [EXT-BLOCK] lines are the Windows agent
+        // working through one extension, not allowlist entries.
+        const count = lines.reduce((acc, l) => acc + (/Browser\s*Extension/i.test(l) && !l.includes('[EXT-BLOCK]') ? 1 : 0), 0)
         return count > 0 ? String(count) : null
       }
       case 'Parent Processes': {
@@ -1032,6 +1053,10 @@ function windowsFieldSearchString(key: AirlockField, data: Record<AirlockField, 
     case 'Blocklist Metarules loaded':
     case 'Allowlist Metarules loaded':
       return data[key].includes('rule checks') ? ', Metarule: .*\\] Check: ' : null
+    case 'Publishers Loaded':
+      return data[key].includes('policy load') ? 'Loading Publishers' : null
+    case 'Blocklist Pathrules loaded':
+      return 'Loading Blocklist Pathrules'
     case 'Audit Blocks':
       return 'PPID=\\d+, Result: [^\\n]*\\[Audit\\]'
     case 'Top Executed File':
@@ -1047,7 +1072,9 @@ function windowsFieldSearchString(key: AirlockField, data: Record<AirlockField, 
     case 'Untrusted Files Submitted':
       return 'Submitting untrusted file'
     case 'Blocked Browser Extensions':
-      return '\\[EXT-BLOCK\\] Extension Title: .*, Result: Block'
+      return '\\[EXT-BLOCK\\] Extension Title: .*, Result: Block(?![^\\n]*\\[Audit\\])'
+    case 'Audit Browser Extensions':
+      return '\\[EXT-BLOCK\\] Extension Title: .*\\[Audit\\]'
     default:
       return null
   }
