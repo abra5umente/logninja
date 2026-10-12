@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { LogEntry, LogLevel } from '../lib/types'
+import { LogEntry, LogLevel, entryKey } from '../lib/types'
 import { Pattern, PatternGroups, PatternSort, groupRows, newPatternGroups, rankPatterns, sparkline, templateParts, templateToRegex } from '../lib/patterns'
 import { meter } from '../lib/meter'
 import { levelColorVar } from '../lib/levelColors'
@@ -8,7 +8,7 @@ interface Props {
   rows: LogEntry[]
   height: number
   onShowRows: (regex: string) => void
-  onJumpTo: (index: number) => void
+  onJumpTo: (key: string) => void
   headerControls?: React.ReactNode
 }
 
@@ -184,7 +184,7 @@ export default function PatternsPanel({ rows, height, onShowRows, onJumpTo, head
                   )}
                   <button
                     className="link opacity-60 group-hover:opacity-100"
-                    onClick={e => { e.stopPropagation(); onJumpTo(p.firstIndex) }}
+                    onClick={e => { e.stopPropagation(); onJumpTo(entryKey(p.firstRow)) }}
                     title="Show the first row of this pattern in the log"
                   >
                     first row

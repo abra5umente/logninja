@@ -120,6 +120,7 @@ export interface Pattern {
   first: Date | null
   last: Date | null
   firstIndex: number
+  firstRow: LogEntry
 }
 
 export type PatternSort = 'common' | 'rare' | 'errors' | 'latest'
@@ -164,7 +165,7 @@ export function groupRows(g: PatternGroups, rows: LogEntry[], count = rows.lengt
     if (id === undefined) {
       id = g.patterns.length
       g.byTemplate.set(tpl, id)
-      g.patterns.push({ template: tpl, count: 0, levelCounts: {}, first: null, last: null, firstIndex: e.index })
+      g.patterns.push({ template: tpl, count: 0, levelCounts: {}, first: null, last: null, firstIndex: e.index, firstRow: e })
     }
     g.rowPattern[i] = id
     const p = g.patterns[id]

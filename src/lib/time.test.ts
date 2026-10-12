@@ -7,7 +7,7 @@ const at = (h: number, m = 0, s = 0, day = 12) => new Date(2026, 9, day, h, m, s
 
 let n = 0
 const entry = (time: Date | null, level: LogLevel = 'INFO', message = ''): LogEntry => ({
-  index: n++, time, timeStr: '', level, message, raw: message,
+  index: n, line: n++, time, timeStr: '', level, message, raw: message,
 } as LogEntry)
 
 describe('pickBinMs', () => {

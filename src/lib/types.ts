@@ -8,7 +8,10 @@ export interface FileInfo {
 }
 
 export interface LogEntry {
+  /** Position in the merged, sorted list. Changes whenever a file is added or removed. */
   index: number
+  /** 1-based line in its own file where this entry starts. Stays put, unlike index. */
+  line: number
   time: Date | null
   timeStr: string
   level: LogLevel
@@ -33,3 +36,8 @@ export interface FiltersState {
   currentMatchIndex: number  // New: tracks which match is currently selected in find mode
 }
 
+
+/** Stable id for an entry: its file plus the line it starts on. Survives files being added or removed. */
+export function entryKey(e: Pick<LogEntry, 'fileId' | 'line'>): string {
+  return `${e.fileId ?? ''}:${e.line}`
+}

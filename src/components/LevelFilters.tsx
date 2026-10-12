@@ -11,8 +11,8 @@ interface Props {
 }
 
 export default function LevelFilters({ selectedLevels, availableLevels, onLevelClick }: Props) {
-  // Only render levels that exist in the data
-  const levelsToRender = ALL_LEVELS.filter(lvl => availableLevels.includes(lvl))
+  // Only render levels that exist in the data, plus any still selected so they can be turned off
+  const levelsToRender = ALL_LEVELS.filter(lvl => availableLevels.includes(lvl) || selectedLevels?.includes(lvl))
 
   return (
     <div className="flex flex-col gap-1.5">

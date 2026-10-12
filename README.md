@@ -8,7 +8,7 @@ A fast, client‑side log viewer built with Vite + React + TypeScript. Drag and 
 - **Three-column layout**: Controls on left, log viewer center, search/files on right
 - **Clean initial state**: When no files are loaded, only the LogNinja logo and file browser are shown - all other UI elements appear after loading
 - **Loading animations**: Smooth blur overlay with animated logo and spinner during file processing, with checkmark completion state
-- **Global drag & drop**: Drop `.log/.txt/.csv` files anywhere on the window (UTF‑8/UTF‑16 BOM aware)
+- **Global drag & drop**: Drop log files anywhere on the window, rotated ones like `server.log.1` included (UTF‑8/UTF‑16 aware; archives and other binary files are skipped with a note)
 - **Modal interactions**: Settings sidebar, Airlock summary modal with ESC/click-outside to dismiss
 
 ### Log Viewing
@@ -63,7 +63,7 @@ A fast, client‑side log viewer built with Vite + React + TypeScript. Drag and 
 
 ### Bookmarks & Export
 - Bookmarks: star lines and export them (CSV/Markdown includes "Bookmarked Lines")
-  - **Bookmark-only view**: Show only bookmarked lines with configurable context (±1, 3, 5, or 10 lines)
+  - **Bookmark-only view**: Show only bookmarked lines with configurable context (±1, 3, 5, or 10 lines), within the current level, file and time filters
 - Export to CSV or Markdown
 - Copy all filtered entries to clipboard
 
@@ -119,7 +119,7 @@ Highlight search mode:
 
 Or skip the build and run the published image: `docker run --rm -p 8080:80 ghcr.io/abra5umente/logninja:main`
 
-CI publishes an image after the checks pass on every push to `main`: `:main` follows the branch and `:sha-<commit>` pins one build. Pushing a `v1.2.3` tag also publishes `:1.2.3` and `:1.2`.
+CI publishes an image after the checks pass on every push to `main`: `:main` follows the branch and `:sha-<commit>` pins one build.
  
 ## Keyboard & Tips
 - `/` focuses search, `Ctrl/Cmd+K` opens command palette

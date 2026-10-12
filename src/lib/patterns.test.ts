@@ -5,7 +5,7 @@ import { LogEntry, LogLevel } from './types'
 
 let n = 0
 const row = (message: string, level: LogLevel = 'INFO', time: Date | null = new Date(2026, 9, 12, 14, 0, n)): LogEntry => ({
-  index: n++, time, timeStr: '', level, source: '', message, raw: message,
+  index: n, line: n++, time, timeStr: '', level, source: '', message, raw: message,
 })
 
 describe('templateOf', () => {
