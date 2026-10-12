@@ -63,7 +63,7 @@ When adding a filter field: add it to `FiltersState`, the initial state and the 
 
 ### Virtual table
 
-`VirtualTable.tsx` always virtualises: fixed row height 28px (no-wrap) or an estimated 48px (wrap, rows may grow), 12 rows overscan, highlighting disabled when more than 1000 rows are passed in. It needs a **numeric pixel `height` prop**. App measures the centre column and timeline with a `ResizeObserver` and passes `tableHeight` (min 400, fallback 600). Do not switch the table to CSS `flex: 1` / auto height: the scroll math depends on a known viewport height and earlier attempts caused effect loops and crashes on file load.
+`VirtualTable.tsx` always virtualises: fixed row height 28px (no-wrap) or an estimated 48px (wrap, rows may grow), 12 rows overscan, highlighting disabled when more than 1000 rows are passed in. It needs a **numeric pixel `height` prop**, the height of the whole panel (header plus rows). App measures the table's wrapper in the centre column (`flex-1 min-h-0`, so its size comes from the viewport and the timeline, never from the table's content) with a `ResizeObserver` and passes it as `tableHeight` (min 160, fallback 600). Inside, the header keeps its natural height and the rows container fills the rest; it is the only scroller, in both directions, and the column labels follow its horizontal scroll via a transform. Don't make the panel's own height auto: the scroll math depends on a known viewport height and earlier attempts caused effect loops and crashes on file load.
 
 ### Timeline
 
