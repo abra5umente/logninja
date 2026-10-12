@@ -82,6 +82,7 @@ export const AIRLOCK_FIELD_GROUPS = [
       'Allowed Executions',
       'Blocked Executions',
       'Audit Blocks',
+      'Constrained Executions',
       'Execution Results',
       'Top Executed File',
       'Top Blocked File',
@@ -243,6 +244,8 @@ function newAgentStats(platform: 'linux' | 'windows') {
     autoElevate: [] as string[],
     interopNames: new Set<string>(),
     blockedExtensions: new Map<string, number>(),
+    constrained: 0,
+    languageModes: [] as string[],
     memory: null as string | null,
     submitted: 0,
   }
@@ -352,6 +355,8 @@ function collectWindowsAgentStats(lines: string[]) {
   const mb = (bytes: string) => (Number(bytes) / 1048576).toFixed(1)
   // True right after a blocked FILE CHECK, whose "Blocking Reasons:" line comes next
   let afterBlock = false
+  // Which list each worker thread is checking, so a metarule check can be put down to the right one
+  const checking = new Map<string, 'block' | 'allow'>()
 
   for (const line of lines) {
     const m = reWinAgentLine.exec(line)
@@ -366,7 +371,7 @@ function collectWindowsAgentStats(lines: string[]) {
       continue
     }
     afterBlock = false
-    const ts = m[1], kind = m[2], msg = m[4]
+    const ts = m[1], kind = m[2], thread = m[3], msg = m[4]
     s.agentLines += 1
     if (!s.firstTs) s.firstTs = ts
     s.lastTs = ts
@@ -374,6 +379,15 @@ function collectWindowsAgentStats(lines: string[]) {
 
     if (kind === 'DEBUG') {
       s.debugLines += 1
+      if (msg.endsWith(' start blocklist processing...') || msg.endsWith(' re-checking blocklist metarules')) checking.set(thread, 'block')
+      else if (msg.endsWith(' start allowlist processing...') || msg.endsWith(' re-checking allowlist metarules')) checking.set(thread, 'allow')
+      // Filename: C:\x.exe, Package: 123, Metarule: name[<guid>] Check: origname match name
+      else if ((mm = msg.match(/, Metarule: .*\[([0-9a-f-]{36})\] Check: /i))) {
+        const list = checking.get(thread)
+        if (list === 'block') s.blockMetarules.add(mm[1])
+        else if (list === 'allow') s.allowMetarules.add(mm[1])
+      }
+      else if ((mm = msg.match(/^\[CONSTRAINED-MODE\] Setting Powershell Language Mode to (.+?)\.*$/))) s.languageModes.push(mm[1].trim())
       if ((mm = msg.match(/^Extension Blocking is (.+)$/))) s.extensionBlocking.push(`${mm[1].charAt(0).toUpperCase()}${mm[1].slice(1).trim()} (logged at ${ts})`)
       continue
     }
@@ -396,6 +410,7 @@ function collectWindowsAgentStats(lines: string[]) {
       bump(s.results, result)
       if (!/^Block/i.test(result)) { s.allowed += 1; continue }
       if (/\[Audit\]/i.test(result)) s.auditBlocked += 1
+      else if (/Constrained Execution/i.test(result)) s.constrained += 1
       else s.blocked += 1
       bump(s.blockedFiles, file)
       afterBlock = true
@@ -539,6 +554,8 @@ export function extractAirlockSummary(text: string): Record<(typeof AIRLOCK_FIEL
         return stats.execs > 0 ? String(stats.blocked) : null
       case 'Audit Blocks':
         return stats.execs > 0 ? String(stats.auditBlocked) : null
+      case 'Constrained Executions':
+        return stats.platform === 'windows' && stats.execs > 0 ? String(stats.constrained) : null
       case 'Execution Results':
         if (stats.results.size === 0) return null
         return [...stats.results].sort((a, b) => b[1] - a[1]).map(([r, c]) => `${r} (${c})`).join('\n')
@@ -657,6 +674,7 @@ export function extractAirlockSummary(text: string): Record<(typeof AIRLOCK_FIEL
         return normalizeToTrueFalse(val)
       }
       case 'Powershell Constrained Mode': {
+        if (stats.languageModes.length > 0) return latestOf(stats.languageModes)
         // Detect default setting explicitly
         if (lines.find(l => /\[CONSTRAINED-MODE\].*Language\s*Mode\s*to\s*default/i.test(l))) return 'default'
         const m = findFirst(lines, [
@@ -1006,7 +1024,14 @@ function windowsFieldSearchString(key: AirlockField, data: Record<AirlockField, 
     case 'Allowed Executions':
       return 'PPID=\\d+, Result: (\\(CACHED\\) )?Allow'
     case 'Blocked Executions':
-      return 'PPID=\\d+, Result: (\\(CACHED\\) )?Block[^\\[\\n]*(\\n|$)'
+      return 'PPID=\\d+, Result: (\\(CACHED\\) )?Block(?![^\\n]*(\\[Audit\\]|Constrained Execution))'
+    case 'Constrained Executions':
+      return 'PPID=\\d+, Result: [^\\n]*Constrained Execution'
+    case 'Powershell Constrained Mode':
+      return 'Setting Powershell Language Mode'
+    case 'Blocklist Metarules loaded':
+    case 'Allowlist Metarules loaded':
+      return data[key].includes('rule checks') ? ', Metarule: .*\\] Check: ' : null
     case 'Audit Blocks':
       return 'PPID=\\d+, Result: [^\\n]*\\[Audit\\]'
     case 'Top Executed File':

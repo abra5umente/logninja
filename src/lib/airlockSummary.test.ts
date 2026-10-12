@@ -266,6 +266,7 @@ const WIN_LOG = [
   w('9:01:00 AM', 'DEBUG', 300, `Processing file: ${SYS_DLL}`),
   w('9:01:00 AM', 'FILE PRE-CHECK', 300, `Filename: ${SYS_DLL}, FileType: 13, Parent: ${EXPLORER}, GrandParent: C:\\Windows\\System32\\userinit.exe, User: tester`),
   w('9:01:00 AM', 'DEBUG', 300, `Filename: ${SYS_DLL} start blocklist processing...`),
+  w('9:01:00 AM', 'DEBUG', 300, `Filename: ${SYS_DLL}, Package: 100, Metarule: example.exe origname[cccccccc-0000-0000-0000-000000000001] Check: origname match example.exe`),
   w('9:01:00 AM', 'DEBUG', 300, 'ScanHash result: 5'),
   w('9:01:00 AM', 'DEBUG', 300, `Responding to Kernel ~ Filename: ${SYS_DLL}, Result: ALLOW`),
   w('9:01:00 AM', 'DEBUG', 300, `Responding to Kernel ~ Filename: ${SYS_DLL} ~ SUCCESS`),
@@ -275,8 +276,13 @@ const WIN_LOG = [
   w('9:01:02 AM', 'DEBUG', 300, 'Airlock AppX EVT authority reconcile activeActivities=0\t desiredPid=0\t authorizedPid=0\t ambiguous='),
   '',
   w('9:01:02 AM', 'INFO', 300, 'Deleting memory for tester groups count: 14, PID: 4000'),
+  winCheck('9:02:00 AM', TOOL, 'Blocking File - Untrusted Execution [Audit]', 500),
+  winReasons(TOOL, 'Not Signed', EXPLORER),
+  winCheck('9:02:01 AM', SCRIPT, 'Blocking File - Constrained Execution', 14),
+  winReasons(SCRIPT, 'Not Signed', POWERSHELL),
   w('9:05:00 AM', 'INFO', 200, 'Check In ~ Policy Update ~ There is a new policy version available 41'),
   w('9:05:00 AM', 'INFO', 200, 'Auditmode: false'),
+  w('9:05:00 AM', 'DEBUG', 200, '[CONSTRAINED-MODE] Setting Powershell Language Mode to Constrained Language...'),
   w('9:05:00 AM', 'INFO', 200, 'AutoUpdate: false'),
   w('9:05:00 AM', 'INFO', 200, 'Self Service is disabled'),
   w('9:05:00 AM', 'INFO', 200, 'Aggressive Boot was successfully disabled'),
@@ -308,7 +314,7 @@ describe('extractAirlockSummary: Windows 7.x agent debug log', () => {
     expect(s['Airlock Version']).toBe('7.0.1.0')
     expect(s['Agent Starts']).toBe('1')
     expect(s['Agent Stops']).toBe('1')
-    expect(s['Debug Logging']).toBe('Yes (11 debug lines)')
+    expect(s['Debug Logging']).toBe('Yes (13 debug lines)')
     expect(s['Log Period']).toBe('01/13/2026 9:00:00 AM to 01/13/2026 9:09:01 AM')
     expect(s['Errors and Warnings']).toBe('2 errors, 2 warnings')
     expect(s['Agent Memory']).toBe('30.0 MB physical, 10.0 MB virtual, 300 handles')
@@ -337,7 +343,8 @@ describe('extractAirlockSummary: Windows 7.x agent debug log', () => {
     expect(s['Policy Updates']).toBe('1')
     expect(s['Audit Mode']).toBe('No (changed from Yes at 01/13/2026 9:05:00 AM)')
     expect(s['Self Service Enabled']).toBe('No (previously Yes (all))')
-    expect(s['Powershell Constrained Mode']).toBe('default')
+    expect(s['Powershell Constrained Mode']).toBe('Constrained Language (previously default)')
+    expect(s['Blocklist Metarules loaded']).toBe('1 (seen in rule checks)')
     expect(s['Assembly Reflection Enabled']).toBe('Yes')
     expect(s['Extension Blocking']).toBe('Enabled for audit (logged at 01/13/2026 9:00:02 AM)')
     expect(s['Aggressive Boot']).toBe('No (previously Yes)')
@@ -346,20 +353,23 @@ describe('extractAirlockSummary: Windows 7.x agent debug log', () => {
     expect(s['Interops Found']).toBe('Example Antivirus')
   })
 
-  it('counts allowed and blocked executions and blocked browser extensions', () => {
-    expect(s['Execution Count']).toBe('7')
+  it('counts allowed, blocked, audit-only and constrained executions and blocked browser extensions', () => {
+    expect(s['Execution Count']).toBe('9')
     expect(s['Allowed Executions']).toBe('3')
     expect(s['Blocked Executions']).toBe('4')
-    expect(s['Audit Blocks']).toBe('0')
+    expect(s['Audit Blocks']).toBe('1')
+    expect(s['Constrained Executions']).toBe('1')
     expect(s['Execution Results']).toBe([
       'Blocking File - Blocked Execution (4)',
       'Allowing file to run - Trusted Publisher Execution (2)',
       'Allowing file to run - Trusted Execution (1)',
+      'Blocking File - Untrusted Execution [Audit] (1)',
+      'Blocking File - Constrained Execution (1)',
     ].join('\n'))
     expect(s['Top Executed File']).toBe(`${SYS_DLL} (3)`)
-    expect(s['Top Blocked File']).toBe(`${TOOL} (2)`)
-    expect(s['Top Blocked Parent']).toBe(`${POWERSHELL} (3)`)
-    expect(s['Top Blocked Publisher']).toBe('Not Signed (3)')
+    expect(s['Top Blocked File']).toBe(`${TOOL} (3)`)
+    expect(s['Top Blocked Parent']).toBe(`${POWERSHELL} (4)`)
+    expect(s['Top Blocked Publisher']).toBe('Not Signed (5)')
     expect(s['Users Seen']).toBe('tester, SYSTEM')
     expect(s['Blocked Browser Extensions']).toBe('Example Helper, Microsoft Edge (1)')
     expect(s['Untrusted Files Submitted']).toBe('1')
@@ -377,15 +387,18 @@ describe('extractAirlockSummary: Windows 7.x agent debug log', () => {
       if (s[key] === '—' || s[key] === '0' || key === 'Log Period') continue
       expect(hits(key), key).toBeGreaterThan(0)
     }
-    expect(hits('Debug Logging')).toBe(11)
+    expect(hits('Debug Logging')).toBe(13)
     expect(hits('Errors and Warnings')).toBe(4)
-    expect(hits('Execution Count')).toBe(7)
+    expect(hits('Execution Count')).toBe(9)
     expect(hits('Allowed Executions')).toBe(3)
     expect(hits('Blocked Executions')).toBe(4)
+    expect(hits('Audit Blocks')).toBe(1)
+    expect(hits('Constrained Executions')).toBe(1)
+    expect(hits('Blocklist Metarules loaded')).toBe(1)
     expect(hits('Top Executed File')).toBe(3)
-    expect(hits('Top Blocked File')).toBe(2)
-    expect(hits('Top Blocked Parent')).toBe(3)
-    expect(hits('Top Blocked Publisher')).toBe(3)
+    expect(hits('Top Blocked File')).toBe(3)
+    expect(hits('Top Blocked Parent')).toBe(4)
+    expect(hits('Top Blocked Publisher')).toBe(5)
     expect(hits('Blocked Browser Extensions')).toBe(1)
     expect(hits('Untrusted Files Submitted')).toBe(1)
   })

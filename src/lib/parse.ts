@@ -155,12 +155,13 @@ function looseLevel(s: string): LogLevel {
   return m ? (levelMap[m[1].toUpperCase()] ?? 'INFO') : 'INFO'
 }
 
-// Airlock agent execution decisions: blocked in enforcement is an error, blocked in audit mode is a warning
+// Airlock agent execution decisions: blocked in enforcement is an error, blocked in audit mode is a warning.
+// "Blocking File - Constrained Execution" is a PowerShell script that ran, but in Constrained Language Mode: a warning too.
 // Linux writes Result="..."; Windows writes ", Result: ..." to the end of the line
 function airlockFileCheckLevel(rest: string): LogLevel {
   const result = rest.match(/\bResult="([^"]*)"/)?.[1] ?? rest.match(/, Result: ([^\n]*)/)?.[1] ?? rest
   if (!/\bBlock/i.test(result)) return 'INFO'
-  return /\[Audit\]/i.test(result) ? 'WARN' : 'ERROR'
+  return /\[Audit\]|Constrained Execution/i.test(result) ? 'WARN' : 'ERROR'
 }
 
 const MONTHS = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec']

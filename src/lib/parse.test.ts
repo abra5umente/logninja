@@ -127,8 +127,10 @@ describe('parseLog: Airlock Windows agent lines', () => {
     const entries = parseLog([
       check('C:\\Tools\\Debug\\Blocker\\error.dll', 'Allowing file to run - Trusted Publisher Execution'),
       check('C:\\Tools\\a.exe', '(CACHED) Blocking File - Blocked Execution'),
+      check('C:\\Tools\\a.exe', 'Blocking File - Untrusted Execution [Audit]'),
+      check('C:\\Tools\\run.ps1', 'Blocking File - Constrained Execution'),
     ].join('\r\n'))
-    expect(entries.map(e => e.level)).toEqual(['INFO', 'ERROR'])
+    expect(entries.map(e => e.level)).toEqual(['INFO', 'ERROR', 'WARN', 'WARN'])
     expect(entries[0].source).toBe('FILE CHECK')
     expect(entries[0].message).toBe(`FILE CHECK [300] Filename: C:\\Tools\\Debug\\Blocker\\error.dll, Hash: ${hash}, Rtype=17, PPID=4000, Result: Allowing file to run - Trusted Publisher Execution`)
   })
