@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { LogEntry, FileInfo } from '../lib/types'
+import { levelTextClass } from '../lib/levelColors'
 
 interface Props {
   rows: LogEntry[]
@@ -89,7 +90,7 @@ export default function VirtualTable({ rows, height: propHeight, highlightRe = n
   const items = rows.slice(start, end + 1)
   const offsetY = start * rowHeight
   const gridCols = wrapLines ? 'grid-cols-[24px_50px_200px_90px_1fr]' : 'grid-cols-[24px_50px_200px_90px_max-content]'
-  const msgCellClass = wrapLines ? 'text-gray-900 dark:text-gray-100 whitespace-pre-wrap break-words' : 'text-gray-900 dark:text-gray-100 whitespace-nowrap'
+  const msgCellClass = wrapLines ? 'whitespace-pre-wrap break-words' : 'whitespace-nowrap'
 
   // Limit highlighting for performance with very large datasets
   const shouldHighlight = items.length <= 1000
@@ -114,38 +115,38 @@ export default function VirtualTable({ rows, height: propHeight, highlightRe = n
   }, [rows, selectedIndex])
 
   return (
-    <div className="border border-gray-200 dark:border-gray-700 rounded-md overflow-hidden bg-white dark:bg-gray-800">
+    <div className="glass overflow-hidden">
       <div className="overflow-x-auto">
         <div className="min-w-[900px]">
-          <div className="flex items-center justify-between bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-100 px-3 py-2 text-xs">
-            <div className={`grid ${gridCols} gap-0.5 font-semibold flex-1`}>
+          <div className="flex items-center justify-between border-b border-line px-3 py-2">
+            <div className={`grid ${gridCols} gap-0.5 flex-1 lbl`}>
               <div title="Bookmark" className="text-center">★</div>
-              <div title="Line Number" className="text-center">Line</div>
-              <div>Time</div>
-              <div>Level</div>
-              <div>Message</div>
+              <div title="Line Number" className="text-center">line</div>
+              <div>time</div>
+              <div>level</div>
+              <div>message</div>
             </div>
             <div className="flex items-center gap-3">
               {/* Bookmark Controls (only shown when bookmarks exist) */}
               {bookmarkCount > 0 && (
                 <>
-                  <label className="inline-flex items-center gap-2 text-[11px] select-none cursor-pointer">
+                  <label className="inline-flex items-center gap-2 text-[11px] text-muted select-none cursor-pointer">
                     <input
                       type="checkbox"
                       checked={showBookmarksOnly}
                       onChange={(e) => onShowBookmarksOnlyChange?.(e.target.checked)}
                       className="cursor-pointer"
                     />
-                    Show bookmarks only ({bookmarkCount})
+                    bookmarks only <span className="text-accent tabular-nums">{bookmarkCount}</span>
                   </label>
 
                   {showBookmarksOnly && (
                     <div className="flex items-center gap-1">
-                      <label className="text-[11px] text-gray-600 dark:text-gray-400">Context:</label>
+                      <label className="text-[11px] text-muted">context</label>
                       <select
                         value={bookmarkContext}
                         onChange={(e) => onBookmarkContextChange?.(parseInt(e.target.value, 10))}
-                        className="px-2 py-1 border border-gray-300 dark:border-gray-600 rounded text-[11px] bg-white dark:bg-gray-700"
+                        className="in !w-auto !py-1 !text-[11px]"
                       >
                         <option value="1">±1 line</option>
                         <option value="3">±3 lines</option>
@@ -157,18 +158,36 @@ export default function VirtualTable({ rows, height: propHeight, highlightRe = n
                 </>
               )}
 
-              <button
-                className="px-2 py-1 border border-gray-300 dark:border-gray-600 rounded text-[11px] hover:bg-gray-50 dark:hover:bg-gray-600"
-                onClick={() => setWrapLines(w => !w)}
-                title={wrapLines ? 'Switch to single-line with horizontal scroll' : 'Wrap long lines'}
-              >
-                {wrapLines ? 'Wrap: On' : 'Wrap: Off'}
-              </button>
+              <div className="seg" role="radiogroup" aria-label="Line wrapping">
+                <button
+                  className={`!py-1 ${wrapLines ? '' : 'on'}`}
+                  onClick={() => setWrapLines(false)}
+                  role="radio"
+                  aria-checked={!wrapLines}
+                  title="Single line with horizontal scroll"
+                >
+                  nowrap
+                </button>
+                <button
+                  className={`!py-1 ${wrapLines ? 'on' : ''}`}
+                  onClick={() => setWrapLines(true)}
+                  role="radio"
+                  aria-checked={wrapLines}
+                  title="Wrap long lines"
+                >
+                  wrap
+                </button>
+              </div>
             </div>
           </div>
 
           {rows.length === 0 ? (
-            <div className="text-sm text-gray-500 dark:text-gray-400 p-4 text-center">No log entries parsed yet.</div>
+            <div className="p-4" style={{ height }}>
+              <div className="empty">
+                <span className="kao">(・・ ) ?</span>
+                nothing to show
+              </div>
+            </div>
           ) : (
             <div ref={containerRef} style={{ height, overflow: 'auto' }} className="relative">
               {/* Spacer div to create scrollable area */}
@@ -182,7 +201,7 @@ export default function VirtualTable({ rows, height: propHeight, highlightRe = n
                   return (
                     <div
                       key={r.index}
-                      className={`grid ${gridCols} text-[12px] px-3 ${itemsAlign} border-b border-gray-50 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 ${selectedIndex === r.index ? 'bg-blue-50 dark:bg-blue-900/20' : ''}`}
+                      className={`grid ${gridCols} text-[12px] px-3 ${itemsAlign} border-b border-line cursor-default ${selectedIndex === r.index ? 'bg-accent/15' : 'hover:bg-fg/5'}`}
                       style={{
                         minHeight: wrapLines ? 28 : rowHeight,
                         height: wrapLines ? 'auto' : rowHeight,
@@ -198,15 +217,15 @@ export default function VirtualTable({ rows, height: propHeight, highlightRe = n
                     >
                       <div className="text-center">
                         <button
-                          className={`w-5 h-5 leading-5 text-center rounded ${bookmarked?.has(r.index) ? 'text-yellow-500' : 'text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300'}`}
+                          className={`w-5 h-5 leading-5 text-center rounded-chip ${bookmarked?.has(r.index) ? 'text-accent' : 'text-muted/50 hover:text-fg'}`}
                           title={bookmarked?.has(r.index) ? 'Unbookmark' : 'Bookmark'}
                           onClick={(e) => { e.stopPropagation(); onToggleBookmark && onToggleBookmark(r.index) }}
                         >★</button>
                       </div>
-                      <div className="text-center text-gray-500 dark:text-gray-400 text-xs tabular-nums" title={`Line ${r.index + 1}`}>{r.index + 1}</div>
-                      <div className="tabular-nums text-gray-700 dark:text-gray-200" title={formatTime(r)}>{shouldHighlight ? renderHighlight(formatTime(r), highlightRe) : formatTime(r)}</div>
-                      <div className="font-medium">
-                        <span className={levelColor(r.level)}>{shouldHighlight ? renderHighlight(r.level, highlightRe) : r.level}</span>
+                      <div className="text-center text-muted text-[11px] tabular-nums" title={`Line ${r.index + 1}`}>{r.index + 1}</div>
+                      <div className="tabular-nums text-muted" title={formatTime(r)}>{shouldHighlight ? renderHighlight(formatTime(r), highlightRe) : formatTime(r)}</div>
+                      <div className="font-semibold">
+                        <span className={levelTextClass(r.level)}>{shouldHighlight ? renderHighlight(r.level, highlightRe) : r.level}</span>
                       </div>
                       <div className={msgCellClass} title={r.message}>{shouldHighlight ? renderHighlight(r.message, highlightRe) : r.message}</div>
                     </div>
@@ -219,23 +238,6 @@ export default function VirtualTable({ rows, height: propHeight, highlightRe = n
        </div>
     </div>
   )
-}
-
-function levelColor(level: LogEntry['level']) {
-  switch (level) {
-    case 'ERROR':
-      return 'text-red-600'
-    case 'WARN':
-      return 'text-amber-600'
-    case 'INFO':
-      return 'text-blue-600'
-    case 'DEBUG':
-      return 'text-gray-600'
-    case 'TRACE':
-      return 'text-slate-600'
-    default:
-      return 'text-gray-500 dark:text-gray-400'
-  }
 }
 
 function renderHighlight(text: string, re: RegExp | null) {
@@ -265,7 +267,7 @@ function renderHighlight(text: string, re: RegExp | null) {
       }
       
       if (start > lastIndex) parts.push(text.slice(lastIndex, start))
-      parts.push(<mark key={start} className="rounded px-0.5" style={{ backgroundColor: 'var(--accent)', color: 'white' }}>{text.slice(start, end)}</mark>)
+      parts.push(<mark key={start} className="rounded-chip px-0.5 bg-accent text-bg">{text.slice(start, end)}</mark>)
       lastIndex = end
     }
     

@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="tokyo" data-scheme="dark">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -9,11 +9,30 @@
     <link rel="icon" type="image/png" sizes="512x512" href="/android-chrome-512x512.png">
     <link rel="apple-touch-icon" href="/apple-touch-icon.png">
     <link rel="manifest" href="/site.webmanifest">
-    <meta name="theme-color" content="#000000">
+    <meta name="theme-color" content="#1a1b26">
     <meta name="description" content="LogNinja is a tool for analyzing and visualizing logs.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <script>
+      // Set the saved palette and light/dark before anything draws (same rules as src/lib/theme.ts)
+      (function () {
+        var palettes = ['tokyo', 'catppuccin', 'rosepine', 'gruvbox', 'kanagawa'];
+        var palette = 'tokyo', pref = 'system';
+        try {
+          var p = localStorage.getItem('palette');
+          if (palettes.indexOf(p) >= 0) palette = p;
+          var t = localStorage.getItem('theme');
+          if (t === 'light' || t === 'dark' || t === 'system') pref = t;
+        } catch (e) {}
+        var light = pref === 'system' ? matchMedia('(prefers-color-scheme: light)').matches : pref === 'light';
+        document.documentElement.dataset.theme = palette;
+        document.documentElement.dataset.scheme = light ? 'light' : 'dark';
+      })();
+    </script>
   </head>
   <body>
+    <div class="backdrop"><i></i></div><div class="scanlines"></div>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
-  </html>
+</html>

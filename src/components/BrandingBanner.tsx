@@ -3,7 +3,6 @@ import React, { useEffect, useState } from 'react'
 export default function BrandingBanner() {
     const [isTyping, setIsTyping] = useState(true)
     const [currentText, setCurrentText] = useState('')
-    const [isDarkMode, setIsDarkMode] = useState(false)
     const fullText = 'logninja.'
 
     // Typing effect on first load (respects reduced motion)
@@ -33,33 +32,12 @@ export default function BrandingBanner() {
         return () => clearInterval(typeTimer)
     }, [])
 
-    // Detect theme changes
-    useEffect(() => {
-        const checkTheme = () => {
-            setIsDarkMode(document.documentElement.classList.contains('dark'))
-        }
-        
-        // Check initial theme
-        checkTheme()
-        
-        // Watch for theme changes
-        const observer = new MutationObserver(checkTheme)
-        observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] })
-        
-        return () => observer.disconnect()
-    }, [])
-
     return (
         <div
             className="fixed left-4 top-4 z-10 pointer-events-none select-none"
         >
             <div
-                className="text-2xl md:text-3xl font-bold tracking-wide"
-                style={{
-                    color: isDarkMode ? '#9ca3af' : '#374151',
-                    fontFamily: 'monospace',
-                    opacity: isDarkMode ? 0.4 : 0.3
-                }}
+                className="text-2xl md:text-3xl font-extrabold tracking-tight text-muted opacity-40"
             >
                 {currentText}
                 {isTyping && (

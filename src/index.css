@@ -1,14 +1,44 @@
-@tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* Base themes */
-html, body, #root { min-height: 100%; }
-body { @apply bg-gray-100 text-gray-900 dark:bg-gray-800 dark:text-gray-100; }
+/* LogNinja on top of theme.css. Only the named colours, mixed with
+   transparent or --bg; no shadows or gradients on panels. */
 
-/* Simple scrollbar tweaks */
+html, body, #root { min-height: 100%; }
+/* Tailwind's reset sets line-height on body after the house theme's font shorthand */
+body { line-height: 1.45; font-variant-numeric: tabular-nums; }
+/* Let the backdrop show: <html> already paints --bg, and an opaque <body> would cover the backdrop's blobs */
+body { background: transparent; }
+
+::placeholder { color: var(--muted); opacity: 1; }
+input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
+
+/* Quiet scrollbars */
+* { scrollbar-color: var(--line-strong) transparent; scrollbar-width: thin; }
 *::-webkit-scrollbar { height: 10px; width: 10px; }
-*::-webkit-scrollbar-thumb { background-color: rgba(125,125,125,0.35); border-radius: 6px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb { background-color: var(--line-strong); border-radius: 6px; }
+
+::selection { background-color: color-mix(in srgb, var(--accent) 30%, transparent); }
+
+/* Tiny labels: the one place for uppercase */
+.lbl { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
+
+/* Solid popups (modals, sidebar, palette) */
+.popup { background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--radius); }
+.scrim { background: color-mix(in srgb, var(--bg) 60%, transparent);
+  backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); }
+
+/* Two-click destructive buttons: the first click arms them */
+.btn.armed, .btn.danger.armed { background: var(--red); color: var(--bg); border-color: var(--red); }
+
+/* A .seg that stretches to fill its row */
+.seg.full { display: flex; width: 100%; }
+.seg.full button { flex: 1; }
+.seg button:hover:not(.on) { color: var(--fg); }
+
+/* Kaomoji */
+.kao { color: var(--magenta); white-space: nowrap; }
 
 /* holy shit did someone say pizza? */
 body.pizza-mode::before {
@@ -27,80 +57,49 @@ body.pizza-mode::before {
     z-index: 0;
 }
 
-.dark body.pizza-mode::before {
+[data-scheme="dark"] body.pizza-mode::before {
     opacity: 0.2;
 }
 
-::selection {
-    background-color: var(--accent);
-    opacity: 0.3;
-}
-
-::-moz-selection {
-    background-color: var(--accent);
-    opacity: 0.3;
-}
-
 /* Airlock Summary Component */
-.airlock-summary {
-    @apply border rounded-md overflow-hidden;
-    border-color: var(--accent);
-    background-color: #f1f5f9;
-}
-
-.dark .airlock-summary {
-    background-color: #1f2937;
-}
-
-.airlock-summary-header {
-    @apply px-3 py-2 flex items-center justify-between border-b;
-    border-bottom-color: var(--accent);
-}
-
-.airlock-summary-title {
-    @apply text-sm font-semibold;
-    color: var(--accent);
-}
-
-.airlock-summary-toggle {
-    @apply text-xs hover:underline;
-    color: var(--accent);
-}
-
 .airlock-summary-table {
-    @apply w-full text-sm;
+    @apply w-full;
 }
 
-.airlock-summary-thead {
-    @apply text-left font-bold;
-    color: var(--accent);
-}
-
-.airlock-summary-row {
-    @apply px-3 py-2;
+.airlock-summary-thead th {
+    @apply text-left font-semibold;
+    color: var(--muted);
 }
 
 .airlock-summary-group td {
-    @apply px-3 pt-4 pb-1 text-xs font-semibold uppercase tracking-wide border-b;
+    @apply px-3 pt-4 pb-1 border-b;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: .08em;
     color: var(--accent);
-    border-bottom-color: var(--accent);
+    border-bottom-color: var(--line-strong);
 }
 
 .airlock-summary-key {
-    @apply px-3 py-2 align-top;
-    color: var(--accent);
+    @apply px-3 py-1.5 align-top;
+    color: var(--muted);
 }
 
 .airlock-summary-value {
-    @apply px-3 py-2 whitespace-pre-wrap;
-    color: #374151;
+    @apply px-3 py-1.5 whitespace-pre-wrap;
+    color: var(--fg);
 }
 
-.dark .airlock-summary-value {
-    color: #d1d5db;
+.airlock-summary-row:hover td {
+    background: color-mix(in srgb, var(--fg) 4%, transparent);
 }
 
 .airlock-summary-clickable {
-    @apply underline decoration-dotted hover:decoration-solid text-left;
+    @apply text-left;
     color: var(--accent);
+    text-decoration: underline dotted;
+}
+
+.airlock-summary-clickable:hover {
+    text-decoration-style: solid;
 }

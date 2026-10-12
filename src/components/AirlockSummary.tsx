@@ -9,19 +9,13 @@ export default function AirlockSummary({ data, collapsed, setCollapsed, onFilter
 }) {
   return (
     <div className="airlock-summary">
-      <div className="airlock-summary-header">
-        <div className="airlock-summary-title">Airlock Debug Summary</div>
-        <button className="airlock-summary-toggle" onClick={() => setCollapsed(!collapsed)}>
-          {collapsed ? 'Expand' : 'Collapse'}
-        </button>
-      </div>
       {!collapsed && (
         <div className="overflow-auto">
           <table className="airlock-summary-table">
             <thead>
               <tr className="airlock-summary-thead">
-                <th className="px-3 py-2 w-56">Key</th>
-                <th className="px-3 py-2">Value</th>
+                <th className="px-3 py-2 w-56 lbl">key</th>
+                <th className="px-3 py-2 lbl">value</th>
               </tr>
             </thead>
             <tbody>

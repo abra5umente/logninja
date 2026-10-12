@@ -1,0 +1,138 @@
+/* House theme: palettes, font, glass panels and the reusable pieces.
+   This is a copy of the shared house style; re-copy it from the original rather than editing here.
+   Theme goes on <html> as data-theme="tokyo|catppuccin|rosepine|gruvbox|kanagawa" and data-scheme="dark|light".
+   With neither set you get tokyo dark. */
+
+/* ── palettes (Omarchy-ish) ───────────────────────────── */
+:root, [data-theme="tokyo"] {
+  --bg:#1a1b26; --surface:#24283b; --fg:#c0caf5; --muted:#565f89;
+  --accent:#7aa2f7; --green:#9ece6a; --yellow:#e0af68; --red:#f7768e; --magenta:#bb9af7; --cyan:#7dcfff;
+}
+[data-theme="catppuccin"] { --bg:#1e1e2e; --surface:#313244; --fg:#cdd6f4; --muted:#7f849c;
+  --accent:#cba6f7; --green:#a6e3a1; --yellow:#f9e2af; --red:#f38ba8; --magenta:#f5c2e7; --cyan:#89dceb; }
+[data-theme="rosepine"] { --bg:#191724; --surface:#26233a; --fg:#e0def4; --muted:#6e6a86;
+  --accent:#ebbcba; --green:#9ccfd8; --yellow:#f6c177; --red:#eb6f92; --magenta:#c4a7e7; --cyan:#9ccfd8; }
+[data-theme="gruvbox"] { --bg:#282828; --surface:#3c3836; --fg:#ebdbb2; --muted:#928374;
+  --accent:#fe8019; --green:#b8bb26; --yellow:#fabd2f; --red:#fb4934; --magenta:#d3869b; --cyan:#8ec07c; }
+[data-theme="kanagawa"] { --bg:#1f1f28; --surface:#2a2a37; --fg:#dcd7ba; --muted:#727169;
+  --accent:#7e9cd8; --green:#98bb6c; --yellow:#e6c384; --red:#e46876; --magenta:#957fb8; --cyan:#7fb4ca; }
+
+/* light counterparts: tokyo day, catppuccin latte, rosé pine dawn, gruvbox light, kanagawa lotus */
+[data-scheme="light"], [data-scheme="light"][data-theme="tokyo"] { --bg:#e1e2e7; --surface:#cdd1e0; --fg:#3760bf; --muted:#6172b0;
+  --accent:#2e7de9; --green:#587539; --yellow:#8c6c3e; --red:#f52a65; --magenta:#9854f1; --cyan:#007197; }
+[data-scheme="light"][data-theme="catppuccin"] { --bg:#eff1f5; --surface:#dce0e8; --fg:#4c4f69; --muted:#7c7f93;
+  --accent:#8839ef; --green:#40a02b; --yellow:#df8e1d; --red:#d20f39; --magenta:#ea76cb; --cyan:#04a5e5; }
+[data-scheme="light"][data-theme="rosepine"] { --bg:#faf4ed; --surface:#f2e9e1; --fg:#575279; --muted:#797593;
+  --accent:#d7827e; --green:#286983; --yellow:#ea9d34; --red:#b4637a; --magenta:#907aa9; --cyan:#56949f; }
+[data-scheme="light"][data-theme="gruvbox"] { --bg:#fbf1c7; --surface:#ebdbb2; --fg:#3c3836; --muted:#7c6f64;
+  --accent:#d65d0e; --green:#79740e; --yellow:#b57614; --red:#9d0006; --magenta:#8f3f71; --cyan:#427b58; }
+[data-scheme="light"][data-theme="kanagawa"] { --bg:#f2ecbc; --surface:#e5ddb0; --fg:#545464; --muted:#716e61;
+  --accent:#4d699b; --green:#6f894e; --yellow:#cc6d00; --red:#c84053; --magenta:#624c83; --cyan:#597b75; }
+
+:root {
+  --glass: color-mix(in srgb, var(--surface) 55%, transparent);
+  --line: color-mix(in srgb, var(--fg) 12%, transparent);
+  --line-strong: color-mix(in srgb, var(--fg) 22%, transparent);
+  --radius: 10px;
+  color-scheme: dark;
+}
+[data-scheme="light"] { color-scheme: light; }
+
+/* ── base ────────────────────────────────────────────── */
+* { box-sizing: border-box; margin: 0; }
+html, body { background: var(--bg); color: var(--fg); }
+body {
+  font: 400 13px/1.45 "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  min-height: 100dvh; overflow-x: hidden;
+  transition: background .4s, color .4s;
+}
+a { color: inherit; }
+
+/* backdrop: blurred colour blobs + dot grid, gives the glass something to bend.
+   Markup: <div class="backdrop"><i></i></div><div class="scanlines"></div> */
+.backdrop { position: fixed; inset: 0; z-index: -1; pointer-events: none; overflow: hidden; }
+.backdrop::before, .backdrop::after {
+  content: ""; position: absolute; width: 60vmax; height: 60vmax; border-radius: 50%;
+  filter: blur(90px); opacity: .18; animation: drift 28s ease-in-out infinite alternate;
+}
+.backdrop::before { background: var(--accent); top: -25vmax; left: -15vmax; }
+.backdrop::after  { background: var(--magenta); bottom: -30vmax; right: -20vmax; animation-delay: -14s; }
+.backdrop i { position: absolute; inset: 0;
+  background-image: radial-gradient(color-mix(in srgb, var(--fg) 9%, transparent) 1px, transparent 1px);
+  background-size: 22px 22px; mask-image: linear-gradient(to bottom, #000 30%, transparent 95%); }
+@keyframes drift { to { transform: translate(12vmax, 8vmax) scale(1.15); } }
+.scanlines { position: fixed; inset: 0; pointer-events: none; z-index: 50; opacity: .02;
+  background: repeating-linear-gradient(to bottom, var(--fg) 0 1px, transparent 1px 3px); }
+
+.wrap { max-width: 1480px; margin: 0 auto; padding: 18px 16px 90px; }
+@media (min-width: 760px) { .wrap { padding: 26px 32px 90px; } }
+
+/* ── glass panels & cards ────────────────────────────── */
+.glass { background: var(--glass); border: 1px solid var(--line); border-radius: var(--radius);
+  backdrop-filter: blur(16px) saturate(150%); -webkit-backdrop-filter: blur(16px) saturate(150%); position: relative; }
+.card { padding: 12px 14px 10px; transition: transform .25s, border-color .25s; animation: rise .45s both; }
+.card:hover { transform: translateY(-2px); border-color: var(--line-strong); }
+/* HUD corner ticks */
+.card::before, .card::after { content: ""; position: absolute; width: 10px; height: 10px; border-color: var(--accent); opacity: .0; transition: .25s; }
+.card::before { top: -1px; left: -1px; border-top: 2px solid; border-left: 2px solid; border-top-left-radius: var(--radius); }
+.card::after { bottom: -1px; right: -1px; border-bottom: 2px solid; border-right: 2px solid; border-bottom-right-radius: var(--radius); }
+.card:hover::before, .card:hover::after { opacity: 1; }
+@keyframes rise { from { opacity: 0; transform: translateY(8px); } }
+
+/* section heading: <div class="group-h"><b>name</b><span class="rule"></span></div> */
+.group-h { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 12px; margin-bottom: 10px; }
+.group-h b { color: var(--fg); font-weight: 600; text-transform: lowercase; }
+.group-h .rule { flex: 1; height: 1px; background: linear-gradient(90deg, var(--line-strong), transparent); }
+
+/* ── pills, key caps, buttons, inputs ────────────────── */
+.pill { display: inline-flex; align-items: center; gap: 8px; padding: 7px 12px; border-radius: 999px;
+  background: var(--glass); border: 1px solid var(--line); backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%); color: var(--fg); font: inherit; cursor: pointer; }
+.pill:hover { border-color: var(--line-strong); }
+.pill .dim { color: var(--muted); }
+kbd { font: inherit; font-size: 11px; padding: 1px 6px; border-radius: 5px; border: 1px solid var(--line-strong);
+  color: var(--muted); background: color-mix(in srgb, var(--bg) 60%, transparent); }
+
+.btn { font: inherit; font-size: 12px; color: var(--fg); background: color-mix(in srgb, var(--surface) 80%, transparent);
+  border: 1px solid var(--line-strong); border-radius: 7px; padding: 6px 11px; cursor: pointer; white-space: nowrap; }
+.btn:hover:not(:disabled) { border-color: var(--accent); }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+.btn.primary { background: var(--accent); color: var(--bg); border-color: var(--accent); font-weight: 700; }
+.btn.subtle { background: transparent; }
+.btn.danger { color: var(--red); border-color: color-mix(in srgb, var(--red) 50%, transparent); }
+.btn.primary.danger, .btn.danger:not(.subtle) { background: var(--red); color: var(--bg); }
+.link { font: inherit; font-size: 11px; color: var(--accent); background: none; border: 0; padding: 0; cursor: pointer; text-decoration: underline dotted; }
+.in { font: inherit; font-size: 12.5px; color: var(--fg); background: color-mix(in srgb, var(--bg) 55%, transparent); width: 100%;
+  border: 1px solid var(--line-strong); border-radius: 7px; padding: 7px 9px; outline: 0; min-width: 0; }
+.in:focus { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+select.in { appearance: none; background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+  background-position: calc(100% - 14px) 50%, calc(100% - 9px) 50%; background-size: 5px 5px; background-repeat: no-repeat; padding-right: 24px; }
+.seg { display: inline-flex; border: 1px solid var(--line-strong); border-radius: 7px; overflow: hidden; }
+.seg button { font: inherit; font-size: 11px; color: var(--muted); background: none; border: 0; padding: 6px 12px; cursor: pointer; letter-spacing: 1px; }
+.seg button.on { background: var(--accent); color: var(--bg); }
+
+/* ── status dots, meters, stats ──────────────────────── */
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 0 var(--green); animation: pulse 2.4s infinite; }
+.dot.warn { background: var(--yellow); } .dot.down { background: var(--red); animation: none; }
+@keyframes pulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--green) 60%, transparent); } 70%,100% { box-shadow: 0 0 0 7px transparent; } }
+
+/* ASCII meter: <span class="bar">▰▰▰▰<span class="off">▱▱▱▱</span></span>; add .warn over 65%, .hot over 85% */
+.bar { letter-spacing: -1px; white-space: nowrap; overflow: hidden; color: var(--green); }
+.bar .off { color: color-mix(in srgb, var(--fg) 14%, transparent); }
+.bar.warn { color: var(--yellow); } .bar.hot { color: var(--red); }
+
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(60px, 1fr)); gap: 6px; }
+.stat { padding: 7px 6px 6px; border-radius: 7px; background: color-mix(in srgb, var(--bg) 45%, transparent); text-align: center; }
+.stat .num { font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.stat .lbl { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
+.stat.hl .num { color: var(--yellow); }
+
+/* ── empty & error states (kaomoji go in .kao) ───────── */
+.empty { padding: 12px; text-align: center; color: var(--muted); border: 1px dashed var(--line); border-radius: 7px; }
+.empty .kao { display: block; font-size: 16px; color: var(--magenta); margin-bottom: 2px; }
+.error { padding: 10px 12px; border-radius: 7px; background: color-mix(in srgb, var(--red) 12%, transparent);
+  color: var(--red); border: 1px solid color-mix(in srgb, var(--red) 35%, transparent); }
+.error .kao { font-size: 15px; margin-right: 6px; }
+.error small { display: block; color: color-mix(in srgb, var(--red) 70%, var(--fg)); margin-top: 3px; }
+
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }

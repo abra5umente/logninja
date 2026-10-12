@@ -33,19 +33,18 @@ export default function LoadBanner({ fileName, loadTime, entriesCount, onClose }
 
   return (
     <div
-      className={`fixed top-0 left-0 right-0 z-50 px-4 py-3 text-center transition-all duration-500 ease-in-out ${
-        isFading 
-          ? 'opacity-0 transform -translate-y-full' 
+      className={`fixed top-0 left-0 right-0 z-50 px-4 py-3 flex justify-center pointer-events-none transition-all duration-500 ease-in-out ${
+        isFading
+          ? 'opacity-0 transform -translate-y-full'
           : 'opacity-100 transform translate-y-0'
       }`}
     >
-      <div 
-        className="max-w-4xl mx-auto text-white rounded-b-lg shadow-lg px-6 py-3"
-        style={{ backgroundColor: 'var(--accent)', opacity: 0.8 }}
-      >
-        <div className="text-sm font-medium">
-          ✓ {fileName} loaded in {loadTime.toFixed(2)}ms, {entriesCount.toLocaleString()} lines parsed
-        </div>
+      <div className="pill !cursor-default text-xs" role="status">
+        <span className="dot" />
+        <span>
+          {fileName} loaded in <span className="text-accent tabular-nums">{loadTime.toFixed(2)}ms</span>
+          <span className="dim">, {entriesCount.toLocaleString()} lines parsed</span>
+        </span>
       </div>
     </div>
   )
