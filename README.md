@@ -106,7 +106,9 @@ Highlight search mode:
 - Run the container: `docker run --rm -p 8080:80 logninja`
 - Open http://localhost:8080
 
-Alternatively, every pull request publishes an image to GHCR, tagged with the PR number: `docker run --rm -p 8080:80 ghcr.io/abra5umente/logninja:pr-<number>`
+Or skip the build and run the published image: `docker run --rm -p 8080:80 ghcr.io/abra5umente/logninja:main`
+
+CI publishes an image after the checks pass on every push to `main`: `:main` follows the branch and `:sha-<commit>` pins one build. Pushing a `v1.2.3` tag also publishes `:1.2.3` and `:1.2`.
  
 ## Keyboard & Tips
 - `/` focuses search, `Ctrl/Cmd+K` opens command palette

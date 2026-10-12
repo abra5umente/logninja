@@ -17,11 +17,11 @@ npm test                 # run Vitest once (unit tests in src/**/*.test.ts)
 npm run test:watch       # Vitest in watch mode
 npm run airlock-summary -- path/to/airlock.0.log   # CLI: print Airlock metadata table to stdout
 
-docker build -t logninja .                # Node 18 build stage -> nginx:alpine serving dist/
+docker build -t logninja .                # Node 24 build stage -> nginx:alpine serving dist/
 docker run --rm -p 8080:80 logninja
 ```
 
-Unit tests use Vitest and sit next to the code they cover (`src/lib/parse.test.ts`, `src/lib/search.test.ts`); they cover pure logic in `src/lib/`, not React components. Run `npm test` and `npm run build` (strict `tsc`, which also type-checks the tests) after changes. There is no linter or formatter. The root `test*.js` files are empty placeholders. `.github/workflows/ci.yml` runs `npm ci`, `npm test` and `npm run build` on every PR and push to `main`; `.github/workflows/container.yml` builds the Docker image on every PR, smoke-tests that nginx serves `index.html`, then pushes it to `ghcr.io/abra5umente/logninja` as `pr-<n>` and `sha-<short>` (skipped for fork PRs); `.github/workflows/claude.yml` only runs Claude when someone mentions `@claude`.
+Unit tests use Vitest and sit next to the code they cover (`src/lib/parse.test.ts`, `src/lib/search.test.ts`); they cover pure logic in `src/lib/`, not React components. Run `npm test` and `npm run build` (strict `tsc`, which also type-checks the tests) after changes. There is no linter or formatter. The root `test*.js` files are empty placeholders. `.github/workflows/ci.yml` runs `npm ci`, `npm test` and `npm run build` (Node 24) on every PR and on pushes to `main` and `v*` tags; on those pushes only, its `image` job then builds the Dockerfile and publishes `ghcr.io/abra5umente/logninja` as `:main` + `:sha-<commit>` (or `:1.2.3` + `:1.2` for a `v1.2.3` tag), same as abraboard. PRs don't build or publish an image; `.github/workflows/claude.yml` only runs Claude when someone mentions `@claude`.
 
 ## Architecture
 
