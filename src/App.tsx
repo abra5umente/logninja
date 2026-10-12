@@ -23,6 +23,8 @@ import SkippedNotice from './components/SkippedNotice'
 import SettingsSidebar from './components/SettingsSidebar'
 import LoadingOverlay from './components/LoadingOverlay'
 import GroupHeading from './components/GroupHeading'
+import WhatsNewModal from './components/WhatsNewModal'
+import { WHATS_NEW, WhatsNewRelease, getSeenId, markSeen, unseenRelease } from './lib/whatsNew'
 import { applyTheme, getInitialPalette, getInitialSchemePref, resolveScheme, savePalette, saveSchemePref, systemPrefersLight, watchSystemScheme, Palette, SchemePref, PALETTES, PALETTE_LABELS } from './lib/theme'
 
 // Colours for different log files, from the theme's named colours so they follow the palette.
@@ -57,6 +59,8 @@ export default function App() {
   const [systemLight, setSystemLight] = useState(systemPrefersLight)
   const [armedFileId, setArmedFileId] = useState<string | null>(null)
   const [cmdOpen, setCmdOpen] = useState(false)
+  // Shows once per new release; reopened from settings or the command palette
+  const [whatsNew, setWhatsNew] = useState<WhatsNewRelease | null>(() => unseenRelease(WHATS_NEW, getSeenId()))
   const searchInputRef = useRef<HTMLInputElement>(null)
   const [airlockSummary, setAirlockSummary] = useState<Record<(typeof AIRLOCK_FIELDS)[number], string> | null>(null)
   const [airlockModalOpen, setAirlockModalOpen] = useState(false)
@@ -88,6 +92,16 @@ export default function App() {
       setFilters(f => ({ ...f, showBookmarksOnly: false }))
     }
   }, [bookmarked.size, filters.showBookmarksOnly])
+
+  // Remember the release as soon as it shows, so it never pops up twice
+  useEffect(() => {
+    if (whatsNew) markSeen(whatsNew.id)
+  }, [whatsNew])
+  const closeWhatsNew = useCallback(() => setWhatsNew(null), [])
+  const openWhatsNew = useCallback(() => {
+    setSettingsOpen(false)
+    setWhatsNew(WHATS_NEW[0] ?? null)
+  }, [])
 
   // ESC key to close Airlock modal
   useEffect(() => {
@@ -430,6 +444,7 @@ export default function App() {
     { id: 'export-csv', label: 'Export CSV (filtered)', run: runDownloadCsv },
     { id: 'copy-csv', label: 'Copy CSV (filtered)', run: runCopyCsv },
     { id: 'focus-search', label: 'Focus Search (/)', run: () => searchInputRef.current?.focus() },
+    { id: 'whats-new', label: "What's New", run: openWhatsNew },
     { id: 'scheme-toggle', label: resolveScheme(schemePref, systemLight) === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode', run: () => setSchemePref(resolveScheme(schemePref, systemLight) === 'dark' ? 'light' : 'dark') },
     ...PALETTES.map(p => ({ id: `palette-${p}`, label: `Theme: ${PALETTE_LABELS[p]}`, run: () => setPalette(p) })),
   ]
@@ -756,7 +771,9 @@ export default function App() {
           schemePref={schemePref}
           setSchemePref={setSchemePref}
           scheme={resolveScheme(schemePref, systemLight)}
+          onWhatsNew={openWhatsNew}
         />
+        <WhatsNewModal release={whatsNew} onClose={closeWhatsNew} />
       </div>
     </>
   )

@@ -12,6 +12,7 @@ interface SettingsSidebarProps {
     setSchemePref: (pref: SchemePref) => void
     // The light/dark scheme in effect, used for the palette swatches
     scheme: Scheme
+    onWhatsNew: () => void
 }
 
 const SCHEMES: SchemePref[] = ['system', 'light', 'dark']
@@ -23,7 +24,8 @@ export default function SettingsSidebar({
     setPalette,
     schemePref,
     setSchemePref,
-    scheme
+    scheme,
+    onWhatsNew
 }: SettingsSidebarProps) {
     const [creditsOpen, setCreditsOpen] = useState(false)
 
@@ -197,12 +199,20 @@ export default function SettingsSidebar({
                     >
                         logninja on github
                     </a>
-                    <button
-                        onClick={() => setCreditsOpen(true)}
-                        className="link !text-xs !text-muted hover:!text-accent"
-                    >
-                        credits
-                    </button>
+                    <span className="flex items-center gap-3">
+                        <button
+                            onClick={onWhatsNew}
+                            className="link !text-xs !text-muted hover:!text-accent"
+                        >
+                            what's new
+                        </button>
+                        <button
+                            onClick={() => setCreditsOpen(true)}
+                            className="link !text-xs !text-muted hover:!text-accent"
+                        >
+                            credits
+                        </button>
+                    </span>
                 </div>
             </aside>
 
