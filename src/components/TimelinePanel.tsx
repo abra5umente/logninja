@@ -1,313 +1,332 @@
-import React, { useMemo, useState } from 'react'
-import { LogEntry, ChunkBin } from '../lib/types'
-import { groupByBinsMs } from '../lib/time'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
+import { LogEntry, LogLevel } from '../lib/types'
+import { MIN_BIN_MS, TimeRange, TimelineBin, buildBins, formatRange, formatStep, formatTick, pickBinMs, sameLocalDay, timeExtent } from '../lib/time'
 import { levelColorVar } from '../lib/levelColors'
 
 interface Props {
+  // rows after the file, level and search filters, but before the time range
   entries: LogEntry[]
-  binMs: number
-  setBinMs: (ms: number) => void
-  onSelectRange: (range: { start: Date; end: Date } | null) => void
-  activeRange?: { start: Date; end: Date } | null
-  virtualTableRows?: number
+  // set in find / highlight mode: search hits get their own strip under the bars
+  isMatch?: ((e: LogEntry) => boolean) | null
+  onSelectRange: (range: TimeRange | null) => void
+  activeRange?: TimeRange | null
 }
 
-type TimelineLevel = 'day' | 'hour' | '15min' | 'minute' | 'second'
+// Bottom to top. Errors and warnings sit on the baseline so they're easy to compare across bars.
+const STACK_ORDER: LogLevel[] = ['ERROR', 'WARN', 'INFO', 'DEBUG', 'TRACE', 'UNKNOWN']
+const CHART_H = 64
+const LABEL_PX = 84
 
-interface DrillState {
-  level: TimelineLevel
-  parentRange: { start: Date; end: Date } | null
-}
+const overlaps = (b: TimelineBin, r: TimeRange) => b.start < r.end && b.end > r.start
 
-const LEVEL_CONFIG = {
-  day: { ms: 86400000, label: 'Day', next: 'hour' as TimelineLevel, plural: 'Days' },
-  hour: { ms: 3600000, label: 'Hour', next: '15min' as TimelineLevel, plural: 'Hours' },
-  '15min': { ms: 900000, label: '15 Min', next: 'minute' as TimelineLevel, plural: '15 Min' },
-  minute: { ms: 60000, label: 'Minute', next: 'second' as TimelineLevel, plural: 'Minutes' },
-  second: { ms: 1000, label: 'Second', next: null, plural: 'Seconds' }
-}
-
-export default function TimelinePanel({ entries, binMs, setBinMs, onSelectRange, activeRange }: Props) {
-  const [drillState, setDrillState] = useState<DrillState>({ level: 'day', parentRange: null })
-  const [drillHistory, setDrillHistory] = useState<DrillState[]>([])
-
-  // Calculate time span of all entries
-  const timeSpan = useMemo(() => {
-    if (entries.length === 0) return 0
-    const times = entries.map(e => e.time).filter(Boolean) as Date[]
-    if (times.length === 0) return 0
-
-    // Use reduce instead of spread operator to avoid stack overflow with large arrays
-    let min = Infinity
-    let max = -Infinity
-    for (const time of times) {
-      const t = time.getTime()
-      if (t < min) min = t
-      if (t > max) max = t
+function sumBins(bins: TimelineBin[]) {
+  const levelCounts: Partial<Record<LogLevel, number>> = {}
+  let count = 0
+  let matches = 0
+  for (const b of bins) {
+    count += b.count
+    matches += b.matches
+    for (const lvl of STACK_ORDER) {
+      const c = b.levelCounts[lvl]
+      if (c) levelCounts[lvl] = (levelCounts[lvl] ?? 0) + c
     }
+  }
+  return { count, matches, levelCounts }
+}
 
-    return max - min
+export default function TimelinePanel({ entries, isMatch, onSelectRange, activeRange }: Props) {
+  // view: the stretch of time the bars cover (null = everything). history powers "zoom out".
+  const [view, setView] = useState<TimeRange | null>(null)
+  const [history, setHistory] = useState<(TimeRange | null)[]>([])
+  const [hover, setHover] = useState<number | null>(null)
+  const [drag, setDrag] = useState<{ a: number; b: number } | null>(null)
+  const chartRef = useRef<HTMLDivElement>(null)
+  const [chartW, setChartW] = useState(600)
+
+  // Something else cleared the time range (reset filters, the palette): go back to the full view.
+  useEffect(() => {
+    if (!activeRange && (view || history.length)) {
+      setView(null)
+      setHistory([])
+    }
+  }, [activeRange])
+
+  const extent = useMemo(() => timeExtent(entries), [entries])
+  const untimed = useMemo(() => {
+    let c = 0
+    for (const e of entries) if (!e.time) c++
+    return c
   }, [entries])
 
-  // Determine appropriate level based on time span and drill state
-  const currentLevel: TimelineLevel = useMemo(() => {
-    if (drillState.parentRange) {
-      return drillState.level
-    }
-
-    // Auto-select level based on span
-    const HOUR = 3600000
-    const DAY = 86400000
-
-    if (timeSpan <= DAY) return 'hour'
-    return 'day'
-  }, [timeSpan, drillState])
-
-  // Filter entries to current drill range
-  const filteredEntries = useMemo(() => {
-    if (!drillState.parentRange) return entries
-
-    return entries.filter(e => {
-      if (!e.time) return false
-      const t = e.time.getTime()
-      return t >= drillState.parentRange!.start.getTime() && t < drillState.parentRange!.end.getTime()
-    })
-  }, [entries, drillState.parentRange])
-
-  // Generate bins for current level
-  const bins = useMemo(() => {
-    return groupByBinsMs(filteredEntries, LEVEL_CONFIG[currentLevel].ms)
-  }, [filteredEntries, currentLevel])
-
+  const shown = view ?? extent
+  const binMs = shown ? pickBinMs(shown.end.getTime() - shown.start.getTime()) : MIN_BIN_MS
+  const bins = useMemo(
+    () => (shown ? buildBins(entries, shown, binMs, isMatch) : []),
+    [entries, shown?.start.getTime(), shown?.end.getTime(), binMs, isMatch],
+  )
   const maxCount = useMemo(() => bins.reduce((m, b) => Math.max(m, b.count), 0), [bins])
-  const [selectedBinIndex, setSelectedBinIndex] = useState<number | null>(null)
+  const maxMatches = useMemo(() => bins.reduce((m, b) => Math.max(m, b.matches), 0), [bins])
 
-  // Calculate aggregate stats for current filter
-  const filterStats = useMemo(() => {
-    if (!activeRange) return null
+  useEffect(() => {
+    const el = chartRef.current
+    if (!el) return
+    const measure = () => setChartW(el.getBoundingClientRect().width || 600)
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [bins.length > 0])
 
-    const totalCount = filteredEntries.length
-    const levelCounts: Record<string, number> = {}
+  // keep hover / keyboard cursor inside the bars when the view changes
+  useEffect(() => { setHover(null) }, [bins])
 
-    filteredEntries.forEach(entry => {
-      const level = entry.level || 'UNKNOWN'
-      levelCounts[level] = (levelCounts[level] || 0) + 1
-    })
-
-    return { totalCount, levelCounts }
-  }, [filteredEntries, activeRange])
-
-  const formatRange = (b: ChunkBin) => {
-    const start = b.start
-
-    if (currentLevel === 'day') {
-      return `${start.toLocaleDateString()}`
-    } else if (currentLevel === 'hour') {
-      return `${start.getHours()}:00`
-    } else if (currentLevel === '15min') {
-      return `${start.getHours()}:${String(start.getMinutes()).padStart(2, '0')}`
-    } else if (currentLevel === 'minute') {
-      return `${start.getHours()}:${String(start.getMinutes()).padStart(2, '0')}`
-    } else {
-      return `${start.getHours()}:${String(start.getMinutes()).padStart(2, '0')}:${String(start.getSeconds()).padStart(2, '0')}`
-    }
+  const zoomTo = (range: TimeRange) => {
+    setHistory(h => [...h, view])
+    setView(range)
+    onSelectRange(range)
   }
 
-  const handleBinClick = (bin: ChunkBin, idx: number) => {
-    const nextLevel = LEVEL_CONFIG[currentLevel].next
+  const pickBin = (i: number) => {
+    const bin = bins[i]
+    if (!bin) return
+    // a one-second bar can't be split further: just filter to it
+    if (binMs <= MIN_BIN_MS) onSelectRange({ start: bin.start, end: bin.end })
+    else zoomTo({ start: bin.start, end: bin.end })
+  }
 
-    // Always filter the log view to the selected time range
-    onSelectRange({ start: bin.start, end: bin.end })
-    setSelectedBinIndex(idx)
-
-    if (!nextLevel) {
-      // At deepest level, stay here with filter applied
+  const zoomOut = () => {
+    // a single bar picked inside the current view: drop back to the whole view first
+    if (view && activeRange && (activeRange.start.getTime() !== view.start.getTime() || activeRange.end.getTime() !== view.end.getTime())) {
+      onSelectRange(view)
       return
     }
-
-    // Save current state to history before drilling down
-    setDrillHistory(prev => [...prev, drillState])
-
-    // Drill down to next level while keeping the filter
-    setDrillState({
-      level: nextLevel,
-      parentRange: { start: bin.start, end: bin.end }
-    })
+    const prev = history.length ? history[history.length - 1] : null
+    setHistory(h => h.slice(0, -1))
+    setView(prev)
+    onSelectRange(prev)
   }
 
-  const handleDrillUp = () => {
-    if (drillHistory.length === 0) {
-      // No history, reset to initial state
-      setDrillState({ level: 'day', parentRange: null })
-      setSelectedBinIndex(null)
-      onSelectRange(null)
-      return
-    }
-
-    // Pop the last state from history
-    const previousState = drillHistory[drillHistory.length - 1]
-    setDrillHistory(prev => prev.slice(0, -1))
-    setDrillState(previousState)
-    setSelectedBinIndex(null)
-
-    // Update filter to match the previous state's range
-    if (previousState.parentRange) {
-      onSelectRange(previousState.parentRange)
-    } else {
-      onSelectRange(null)
-    }
-  }
-
-  // Handle clear filter - reset both range and drill state
-  const handleClearFilter = () => {
+  const reset = () => {
+    setView(null)
+    setHistory([])
     onSelectRange(null)
-    setDrillState({ level: 'day', parentRange: null })
-    setDrillHistory([])
-    setSelectedBinIndex(null)
   }
+
+  const binAt = (clientX: number) => {
+    const el = chartRef.current
+    if (!el || bins.length === 0) return 0
+    const r = el.getBoundingClientRect()
+    const i = Math.floor(((clientX - r.left) / r.width) * bins.length)
+    return Math.min(bins.length - 1, Math.max(0, i))
+  }
+
+  const onPointerDown = (e: React.PointerEvent) => {
+    if (e.button !== 0) return
+    e.currentTarget.setPointerCapture(e.pointerId)
+    const i = binAt(e.clientX)
+    setDrag({ a: i, b: i })
+    setHover(i)
+  }
+  const onPointerMove = (e: React.PointerEvent) => {
+    const i = binAt(e.clientX)
+    setHover(i)
+    if (drag && drag.b !== i) setDrag({ a: drag.a, b: i })
+  }
+  const onPointerUp = () => {
+    if (!drag) return
+    const lo = Math.min(drag.a, drag.b)
+    const hi = Math.max(drag.a, drag.b)
+    setDrag(null)
+    if (lo === hi) pickBin(lo)
+    else zoomTo({ start: bins[lo].start, end: bins[hi].end })
+  }
+
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    if (bins.length === 0) return
+    if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+      e.preventDefault()
+      const step = e.key === 'ArrowRight' ? 1 : -1
+      setHover(h => Math.min(bins.length - 1, Math.max(0, (h ?? (step > 0 ? -1 : bins.length)) + step)))
+    } else if (e.key === 'Enter' && hover !== null) {
+      e.preventDefault()
+      pickBin(hover)
+    } else if (e.key === 'Backspace' && (view || activeRange)) {
+      e.preventDefault()
+      zoomOut()
+    }
+  }
+
+  const dragLo = drag ? Math.min(drag.a, drag.b) : -1
+  const dragHi = drag ? Math.max(drag.a, drag.b) : -1
+  const showMatches = !!isMatch
+
+  // What the line above the bars says: the dragged span, the hovered bar, or the selection.
+  const readout = useMemo(() => {
+    if (bins.length === 0) return null
+    if (drag && dragLo !== dragHi) {
+      const span = bins.slice(dragLo, dragHi + 1)
+      return { label: 'release to zoom into', range: { start: span[0].start, end: span[span.length - 1].end }, ...sumBins(span) }
+    }
+    if (hover !== null && bins[hover]) {
+      const b = bins[hover]
+      return { label: '', range: { start: b.start, end: b.end }, count: b.count, matches: b.matches, levelCounts: b.levelCounts }
+    }
+    if (activeRange) {
+      return { label: 'selected', range: activeRange, ...sumBins(bins.filter(b => overlaps(b, activeRange))) }
+    }
+    return { label: 'all', range: { start: bins[0].start, end: bins[bins.length - 1].end }, ...sumBins(bins) }
+  }, [bins, hover, drag, dragLo, dragHi, activeRange])
+
+  const labelEvery = Math.max(1, Math.ceil(LABEL_PX / (chartW / Math.max(1, bins.length))))
+  const ticks: { i: number; text: string }[] = []
+  let prevTick: Date | null = null
+  for (let i = 0; i < bins.length; i += labelEvery) {
+    // skip a label that would run off the right edge
+    if ((bins.length - i) * (chartW / bins.length) < LABEL_PX * 0.6 && i !== 0) break
+    const d = bins[i].start
+    ticks.push({ i, text: formatTick(d, binMs, !prevTick || !sameLocalDay(prevTick, d)) })
+    prevTick = d
+  }
+
+  const zoomed = !!view || !!activeRange
 
   return (
-    <div className="glass w-full flex-shrink-0" style={{ minHeight: '120px' }}>
-      <div className="px-3 pt-3">
-        <div className="group-h !mb-2">
-          <b>timeline</b>
-          <span className="rule" />
-          {activeRange && (
-            <button className="link whitespace-nowrap flex-shrink-0" onClick={handleClearFilter}>clear filter</button>
-          )}
-        </div>
-
-        {/* Breadcrumb Navigation */}
-        <div className="flex items-center gap-2 text-[11px] text-muted">
-          <div>
-            viewing <span className="font-semibold text-fg">{LEVEL_CONFIG[currentLevel].label.toLowerCase()}</span>
-            {bins.length > 0 && <span className="ml-1 tabular-nums">({bins.length} {currentLevel === 'day' ? 'days' : currentLevel === 'hour' ? 'hours' : 'bins'})</span>}
-          </div>
-          {drillState.parentRange && (
-            <button
-              className="btn !text-[11px] !py-0.5 !px-2"
-              onClick={handleDrillUp}
-            >
-              ← back to {drillHistory.length > 0 ? LEVEL_CONFIG[drillHistory[drillHistory.length - 1].level].plural.toLowerCase() : 'all'}
-            </button>
-          )}
-        </div>
+    <div className="glass w-full flex-shrink-0 px-3 pt-3 pb-2">
+      <div className="group-h !mb-1">
+        <b>timeline</b>
+        <span className="rule" />
+        {zoomed && (
+          <>
+            {(history.length > 0 || (activeRange && view)) && (
+              <button className="link whitespace-nowrap flex-shrink-0" onClick={zoomOut}>← zoom out</button>
+            )}
+            <button className="link whitespace-nowrap flex-shrink-0" onClick={reset}>show all</button>
+          </>
+        )}
       </div>
 
       {bins.length === 0 ? (
-        <div className="p-3">
-          <div className="empty text-xs">
-            <span className="kao">(￣～￣;)</span>
-            no timestamped entries
-          </div>
+        <div className="empty text-xs">
+          <span className="kao">(￣～￣;)</span>
+          no timestamped entries
         </div>
       ) : (
         <>
-          {/* Horizontal Histogram */}
-          <div className="px-3 py-2">
-            <HorizontalHistogram
-              bins={bins}
-              max={maxCount}
-              onSelect={handleBinClick}
-              selectedIndex={selectedBinIndex}
-              currentLevel={currentLevel}
-            />
+          <div className="flex items-center gap-3 text-[11px] text-muted mb-1 min-w-0">
+            <span className="truncate">
+              1 bar = <span className="text-fg">{formatStep(binMs)}</span>
+              <span className="hidden sm:inline"> · click a bar to zoom in, drag across bars to pick a range</span>
+            </span>
+            <span className="flex-1" />
+            {showMatches && (
+              <span className="flex items-center gap-1 whitespace-nowrap">
+                <span className="inline-block w-3 h-1 rounded-chip bg-accent" /> search hits
+              </span>
+            )}
+            {untimed > 0 && (
+              <span className="whitespace-nowrap" title="rows with no timestamp can't be placed on the timeline">
+                {untimed.toLocaleString()} without a time
+              </span>
+            )}
           </div>
 
-          {/* Filter Details - Always reserve space to prevent layout shift */}
-          <div className="px-3 pb-2 border-t border-line pt-2" style={{ minHeight: '50px' }}>
-            {filterStats && (
-              <>
-                <div className="text-xs mb-1">
-                  <span className="lbl mr-2">filtered</span>
-                  <span className="font-semibold tabular-nums">{filterStats.totalCount.toLocaleString()}</span> {filterStats.totalCount === 1 ? 'entry' : 'entries'}
-                </div>
-                <LevelBadgesFromCounts levelCounts={filterStats.levelCounts} />
-              </>
+          {readout && (
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] min-h-[18px] mb-1">
+              {readout.label && <span className="lbl">{readout.label}</span>}
+              <span className="text-fg tabular-nums">{formatRange(readout.range, binMs)}</span>
+              <span className="text-muted">·</span>
+              <span className="tabular-nums"><span className="text-fg font-semibold">{readout.count.toLocaleString()}</span> <span className="text-muted">{readout.count === 1 ? 'entry' : 'entries'}</span></span>
+              {STACK_ORDER.filter(l => readout.levelCounts[l]).map(l => (
+                <span key={l} className="inline-flex items-center gap-1 tabular-nums">
+                  <span className="w-1.5 h-1.5 rounded-full" style={{ background: levelColorVar(l) }} />
+                  <span className="text-muted">{l.toLowerCase()}</span> {readout.levelCounts[l]!.toLocaleString()}
+                </span>
+              ))}
+              {showMatches && (
+                <span className="tabular-nums text-accent">{readout.matches.toLocaleString()} {readout.matches === 1 ? 'hit' : 'hits'}</span>
+              )}
+            </div>
+          )}
+
+          <div
+            ref={chartRef}
+            role="slider"
+            tabIndex={0}
+            aria-label="timeline: arrow keys move between bars, enter zooms in, backspace zooms out"
+            aria-valuemin={0}
+            aria-valuemax={bins.length - 1}
+            aria-valuenow={hover ?? 0}
+            aria-valuetext={readout ? formatRange(readout.range, binMs) : undefined}
+            className="relative select-none cursor-crosshair outline-none rounded-inner focus-visible:ring-1 focus-visible:ring-accent touch-none"
+            onPointerDown={onPointerDown}
+            onPointerMove={onPointerMove}
+            onPointerUp={onPointerUp}
+            onPointerCancel={() => setDrag(null)}
+            onPointerLeave={() => { if (!drag) setHover(null) }}
+            onKeyDown={onKeyDown}
+          >
+            <div className="flex items-end border-b border-line-strong" style={{ height: CHART_H, gap: bins.length > 120 ? 0 : 2 }}>
+              {bins.map((b, i) => {
+                const h = b.count === 0 ? 0 : Math.max(3, Math.round((b.count / maxCount) * CHART_H))
+                const inDrag = i >= dragLo && i <= dragHi
+                const dimmed = !drag && activeRange && !overlaps(b, activeRange)
+                const lit = hover === i || inDrag
+                return (
+                  <div
+                    key={b.start.getTime()}
+                    className={`relative flex-1 h-full flex items-end min-w-0 ${inDrag ? 'bg-accent/15' : ''}`}
+                    style={{ opacity: dimmed ? 0.3 : 1 }}
+                  >
+                    {lit && <div className="absolute inset-0 bg-fg/5 pointer-events-none" />}
+                    <div className="w-full flex flex-col-reverse overflow-hidden rounded-t-[2px]" style={{ height: h }}>
+                      {STACK_ORDER.map(l => {
+                        const c = b.levelCounts[l]
+                        if (!c) return null
+                        return (
+                          <div
+                            key={l}
+                            style={{
+                              flex: `${c} 0 0`,
+                              // a few errors in a busy bar should still show up
+                              minHeight: l === 'ERROR' || l === 'WARN' ? 2 : 0,
+                              background: levelColorVar(l),
+                              opacity: lit ? 1 : 0.8,
+                            }}
+                          />
+                        )
+                      })}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+
+            {showMatches && (
+              <div className="flex mt-[3px]" style={{ height: 4, gap: bins.length > 120 ? 0 : 2 }}>
+                {bins.map(b => (
+                  <div
+                    key={b.start.getTime()}
+                    className="flex-1 rounded-chip bg-accent"
+                    style={{ opacity: b.matches === 0 ? 0 : 0.3 + 0.7 * (b.matches / Math.max(1, maxMatches)) }}
+                  />
+                ))}
+              </div>
             )}
+
+            <div className="relative h-4 mt-1 text-[10px] text-muted tabular-nums overflow-hidden">
+              {ticks.map(t => (
+                <span
+                  key={t.i}
+                  className="absolute top-0 whitespace-nowrap pl-1 border-l border-line-strong leading-none pt-0.5"
+                  style={{ left: `${(t.i / bins.length) * 100}%` }}
+                >
+                  {t.text}
+                </span>
+              ))}
+            </div>
           </div>
         </>
       )}
     </div>
   )
-}
-
-function HorizontalHistogram({ bins, max, onSelect, selectedIndex, currentLevel }: {
-  bins: ChunkBin[]
-  max: number
-  onSelect: (b: ChunkBin, idx: number) => void
-  selectedIndex: number | null
-  currentLevel: TimelineLevel
-}) {
-  const scale = (v: number) => max === 0 ? 0 : Math.max(12, Math.round((v / max) * 50))
-  const nextLevel = LEVEL_CONFIG[currentLevel].next
-
-  return (
-    <div className="w-full overflow-x-auto">
-      <div className="flex gap-1.5 min-w-full pb-1" style={{ minHeight: '60px' }}>
-        {bins.map((b, i) => {
-          const height = scale(b.count)
-          const isSelected = selectedIndex === i
-          const tooltipAction = nextLevel ? `Click to drill into ${LEVEL_CONFIG[nextLevel].label}` : 'Click to filter'
-          return (
-            <div
-              key={i}
-              className={`flex-1 flex flex-col items-stretch justify-end min-w-[40px] rounded-inner p-1 border ${isSelected ? 'border-accent bg-accent/10' : 'border-transparent bg-bg/45'}`}
-            >
-              {/* Clickable bar with count inside */}
-              <button
-                onClick={() => onSelect(b, i)}
-                className={`w-full rounded-chip transition-colors relative flex items-center justify-center font-semibold text-[10px] tabular-nums ${
-                  isSelected ? 'bg-accent text-bg' : 'bg-accent/35 text-fg hover:bg-accent/60'
-                }`}
-                style={{
-                  height: `${height}px`,
-                  minHeight: '24px'
-                }}
-                title={`${formatBinTime(b, currentLevel)} • ${b.count} entries\n${tooltipAction}`}
-              >
-                {b.count}
-              </button>
-
-              {/* Horizontal date/time label */}
-              <div className={`text-[9px] text-center mt-1 whitespace-nowrap tabular-nums ${isSelected ? 'text-fg font-semibold' : 'text-muted'}`}>
-                {formatBinTime(b, currentLevel)}
-              </div>
-            </div>
-          )
-        })}
-      </div>
-    </div>
-  )
-}
-
-function LevelBadgesFromCounts({ levelCounts }: { levelCounts: Record<string, number> }) {
-  const entries = Object.entries(levelCounts).filter(([_, v]) => (v ?? 0) > 0) as [string, number][]
-  if (entries.length === 0) return <div className="text-[11px] text-muted">no data</div>
-  return (
-    <div className="flex flex-wrap gap-1">
-      {entries.map(([lvl, count]) => (
-        <span key={lvl} className="inline-flex items-center gap-1.5 text-[11px] px-1.5 py-0.5 rounded-chip border border-line bg-bg/45">
-          <span className="w-1.5 h-1.5 rounded-full" style={{ background: levelColorVar(lvl) }} />
-          {lvl} <span className="tabular-nums text-muted">{count.toLocaleString()}</span>
-        </span>
-      ))}
-    </div>
-  )
-}
-
-function formatBinTime(b: ChunkBin, level: TimelineLevel): string {
-  const start = b.start
-
-  if (level === 'day') {
-    return start.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
-  } else if (level === 'hour') {
-    return `${start.getHours()}:00`
-  } else if (level === '15min') {
-    return `${start.getHours()}:${String(start.getMinutes()).padStart(2, '0')}`
-  } else if (level === 'minute') {
-    return `${start.getHours()}:${String(start.getMinutes()).padStart(2, '0')}`
-  } else {
-    return `${start.getHours()}:${String(start.getMinutes()).padStart(2, '0')}:${String(start.getSeconds()).padStart(2, '0')}`
-  }
 }

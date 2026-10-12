@@ -33,10 +33,3 @@ export interface FiltersState {
   currentMatchIndex: number  // New: tracks which match is currently selected in find mode
 }
 
-export interface ChunkBin {
-  start: Date
-  end: Date
-  count: number
-  levelCounts: Partial<Record<LogLevel, number>>
-}
-

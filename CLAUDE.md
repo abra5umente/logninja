@@ -67,7 +67,7 @@ When adding a filter field: add it to `FiltersState`, the initial state and the 
 
 ### Timeline
 
-`TimelinePanel.tsx` bins the currently filtered entries with `groupByBinsMs` (`lib/time.ts`) at five levels: Day → Hour → 15 min → Minute → Second (`LEVEL_CONFIG`). It starts at Hour if the span is ≤24h, otherwise Day. Clicking a bin both sets `filters.timeRange` and drills down one level; a history stack powers "Back to …". Min/max are computed with loops, not `Math.min(...arr)`, to avoid stack overflows on large inputs; keep it that way.
+`TimelinePanel.tsx` gets `timelineEntries` from App: rows after the file, level and (filter-mode) search filters but **not** the time range, so picking a range doesn't empty the bars around it. In find / highlight mode App also passes `isMatch`, and hits per bar show as a strip under the chart. The panel keeps a `view` range (null = the full extent) plus a history stack for "zoom out"; `pickBinMs` (`lib/time.ts`) picks the bar width from `BIN_STEPS` so a view has at most 72 bars, and `buildBins` aligns bars to the local clock (local midnight for day bars) and counts per level and matches. Clicking a bar or dragging across several sets `filters.timeRange` and zooms the view to it; at 1-second bars a click only filters. When the time range is cleared from elsewhere, the panel resets its view. Bars stack by level (ERROR at the bottom); axis labels are thinned by the measured chart width. `timeExtent` uses a loop, not `Math.min(...arr)`, to avoid stack overflows on large inputs; keep it that way.
 
 ### Other pieces
 

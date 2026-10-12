@@ -38,18 +38,17 @@ A fast, client‑side log viewer built with Vite + React + TypeScript. Drag and 
   - Click a level → toggle it on or off (pick as many as you like; none picked shows every level)
   - Ctrl/Cmd+Click a level → show only that level (again to clear)
   - Visual feedback: selected levels highlighted, unselected dimmed
-- **Time range filtering** via timeline drill-down
+- **Time range filtering** by clicking or dragging on the timeline
 - **Reset button**: Clears all filters (search, files, levels, time range) at once
 
 ### Timeline & Navigation
-- **Hierarchical timeline with drill-down**: Navigate long time spans efficiently
-  - Auto-detects starting level (Day for >24hr spans, Hour for ≤24hr)
-  - Five levels: Day → Hour → 15min → Minute → Second
-  - **Filters log view at every drill level** - not just at the deepest level
-  - Incremental back navigation: "← Back to Hours", "← Back to Days", etc.
-  - Card-based bin design with event counts inside each bin
-  - Horizontal date/time labels for easy reading
-  - Visual histogram showing log level breakdown for each time bin
+- **Stacked timeline**: each bar is split by level (errors and warnings on the baseline), so bursts of errors stand out at a glance
+  - Bar width adapts to what you're looking at (1 sec up to days), always lined up with your local clock
+  - Hover a bar to see its time span, entry count and per-level counts
+  - **Click a bar** to zoom into it, or **drag across bars** to zoom into a custom range; both filter the log view
+  - "← zoom out" steps back one zoom, "show all" goes back to the full span
+  - Follows your file, level and search filters; in find mode, search hits get their own strip under the bars
+  - Keyboard: focus the timeline, then arrow keys move between bars, Enter zooms in, Backspace zooms out
   - Fixed statistics panel prevents layout shift during navigation
   - Optimized for large time spans (handles year+ log files without stack overflow)
 
@@ -117,7 +116,7 @@ CI publishes an image after the checks pass on every push to `main`: `:main` fol
 - `/` focuses search, `Ctrl/Cmd+K` opens command palette
 - Click a row, then `Ctrl/Cmd+C` to copy its full raw text
 - **Wrap toggle**: Enable for multi-line rows that adapt to content length; disable for single-line rows with horizontal scrolling
-- **Timeline drill-down**: Click any bin to filter and explore deeper time ranges (Day → Hour → 15min → Minute → Second)
+- **Timeline zoom**: Click a bar to zoom in, or drag across bars to pick a range
 - **Multi-select filtering**:
   - `Ctrl/Cmd+Click` on files to select multiple files simultaneously
   - Click log levels to toggle them on and off; `Ctrl/Cmd+Click` shows only that level

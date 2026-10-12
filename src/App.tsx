@@ -51,7 +51,6 @@ export default function App() {
   const [schemePref, setSchemePref] = useState<SchemePref>(getInitialSchemePref)
   const [systemLight, setSystemLight] = useState(systemPrefersLight)
   const [armedFileId, setArmedFileId] = useState<string | null>(null)
-  const [binMs, setBinMs] = useState<number>(60000)
   const [cmdOpen, setCmdOpen] = useState(false)
   const searchInputRef = useRef<HTMLInputElement>(null)
   const [airlockSummary, setAirlockSummary] = useState<Record<(typeof AIRLOCK_FIELDS)[number], string> | null>(null)
@@ -301,6 +300,37 @@ export default function App() {
       return hay.toLowerCase().includes(q)
     })
   }, [entries, filters, highlightRe, bookmarked])
+
+  // The timeline shows what the table would show without the time range, so picking a range
+  // doesn't empty the bars around it. Search hides rows only in filter mode; in find and
+  // highlight mode the hits get their own strip instead.
+  const timelineIsMatch = useMemo(() => {
+    const raw = filters.query.trim()
+    if (!raw) return null
+    const re = highlightRe ? new RegExp(highlightRe.source, highlightRe.flags.replace('g', '')) : null
+    const q = filters.useRegex ? raw : raw.toLowerCase()
+    return (e: LogEntry) => {
+      const hay = `${e.timeStr} ${e.level} ${e.message}`
+      return re ? re.test(hay) : hay.toLowerCase().includes(q)
+    }
+  }, [filters.query, filters.useRegex, highlightRe])
+
+  const timelineEntries = useMemo(() => {
+    const searchHides = filters.searchMode === 'filter' && !filters.highlightOnly && timelineIsMatch
+    return entries.filter(e => {
+      if (filters.selectedFiles && filters.selectedFiles.length > 0 && e.fileId) {
+        if (!filters.selectedFiles.includes(e.fileId)) return false
+      }
+      if (filters.selectedLevels && filters.selectedLevels.length > 0) {
+        if (!filters.selectedLevels.includes(e.level)) return false
+      } else if (filters.selectedLevel && e.level !== filters.selectedLevel) {
+        return false
+      }
+      return searchHides ? timelineIsMatch(e) : true
+    })
+  }, [entries, filters.selectedFiles, filters.selectedLevels, filters.selectedLevel, filters.searchMode, filters.highlightOnly, timelineIsMatch])
+
+  const showTimelineHits = (filters.searchMode === 'find' || filters.highlightOnly) ? timelineIsMatch : null
 
   // Find mode: Calculate matching entry indices
   const matchingIndices = useMemo(() => {
@@ -692,9 +722,8 @@ export default function App() {
             {entries.length > 0 && (
               <div className="flex-shrink-0">
                 <TimelinePanel
-                  entries={entries}
-                  binMs={binMs}
-                  setBinMs={setBinMs}
+                  entries={timelineEntries}
+                  isMatch={showTimelineHits}
                   onSelectRange={(r) => setFilters(f => ({ ...f, timeRange: r }))}
                   activeRange={filters.timeRange ?? null}
                 />
