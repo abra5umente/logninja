@@ -28,7 +28,9 @@ const levelMap: Record<string, LogLevel> = {
 
 const reLevel = /(\[)?\b(ERROR|ERR|WARN|WARNING|INFO|DEBUG|TRACE)\b(\])?/i
 
-function parseDate(ts: string): Date | null {
+type SlashOrder = 'DMY' | 'MDY' | null
+
+function parseDate(ts: string, slashOrder: SlashOrder = null): Date | null {
   // ISO / RFC-3339
   if (/^\d{4}-\d{2}-\d{2}T/.test(ts)) {
     // Offsets may come without a colon (+1000), which Date does not accept everywhere
@@ -67,10 +69,11 @@ function parseDate(ts: string): Date | null {
   if (/^\d{1,2}\/\d{1,2}\/\d{4} \d{1,2}:\d{2}:\d{2}/i.test(ts)) {
     const m = ts.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4}) (\d{1,2}):(\d{2}):(\d{2})(?:[.,](\d+))?(?:\s?(AM|PM))?/i)
     if (m) {
-      // Try to infer whether it's DMY or MDY by values; prefer DMY when day > 12
+      // Use the order settled for the whole file when there is one; otherwise infer it from the values, preferring DMY
       let a = Number(m[1]), b = Number(m[2]), yyyy = Number(m[3])
       let dd: number, mm: number
-      if (a > 12 && b <= 12) { dd = a; mm = b } else if (b > 12 && a <= 12) { dd = b; mm = a } else { dd = a; mm = b }
+      if (slashOrder === 'MDY') { dd = b; mm = a } else if (slashOrder === 'DMY') { dd = a; mm = b }
+      else if (a > 12 && b <= 12) { dd = a; mm = b } else if (b > 12 && a <= 12) { dd = b; mm = a } else { dd = a; mm = b }
       let HH = Number(m[4]), MM = Number(m[5]), SS = Number(m[6])
       const ms = m[7] ? Number(('000' + m[7]).slice(-3)) : 0
       const ampm = m[8]?.toUpperCase()
@@ -115,13 +118,13 @@ function parseDate(ts: string): Date | null {
   return null
 }
 
-function detectTimestamp(s: string): { tsStr: string; date: Date | null; rest: string } | null {
+function detectTimestamp(s: string, slashOrder: SlashOrder = null): { tsStr: string; date: Date | null; rest: string } | null {
   for (const re of [reISO, reYMD_HMS, reYMD_SLASH_HMS, reDMY_HMS, reMDY_HMS, reDMON_HMS, reREDIS_PREFIX_DMON_HMS] as const) {
     const m = s.match(re)
     if (m) {
       const tsStr = m[2]
       const rest = s.slice(m[0].length).trimStart()
-      return { tsStr, date: parseDate(tsStr), rest }
+      return { tsStr, date: parseDate(tsStr, slashOrder), rest }
     }
   }
   return null
@@ -152,11 +155,13 @@ function looseLevel(s: string): LogLevel {
   return m ? (levelMap[m[1].toUpperCase()] ?? 'INFO') : 'INFO'
 }
 
-// Airlock agent execution decisions: blocked in enforcement is an error, blocked in audit mode is a warning
+// Airlock agent execution decisions: blocked in enforcement is an error, blocked in audit mode is a warning.
+// "Blocking File - Constrained Execution" is a PowerShell script that ran, but in Constrained Language Mode: a warning too.
+// Linux writes Result="..."; Windows writes ", Result: ..." to the end of the line
 function airlockFileCheckLevel(rest: string): LogLevel {
-  const result = rest.match(/\bResult="([^"]*)"/)?.[1] ?? rest
+  const result = rest.match(/\bResult="([^"]*)"/)?.[1] ?? rest.match(/, Result: ([^\n]*)/)?.[1] ?? rest
   if (!/\bBlock/i.test(result)) return 'INFO'
-  return /\[Audit\]/i.test(result) ? 'WARN' : 'ERROR'
+  return /\[Audit\]|Constrained Execution/i.test(result) ? 'WARN' : 'ERROR'
 }
 
 const MONTHS = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec']
@@ -180,6 +185,15 @@ export function parseLog(text: string, fileId: string = '', fileName: string = '
     // d/m/yyyy or m/d/yyyy ... (we don't disambiguate day/month; use as-is)
     m = line.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})\s+\d{1,2}:\d{2}:\d{2}/)
     if (m) { baseYMD = { y: Number(m[3]), m: Number(m[2]), d: Number(m[1]) }; break }
+  }
+  // "10/12/2026" does not say which number is the day. One value above 12 anywhere in the file settles it for every line.
+  let slashOrder: SlashOrder = null
+  const reSlashDate = /^(?:ServerActivityMessage\|)?\s*(\d{1,2})\/(\d{1,2})\/\d{4} \d/
+  for (const raw of linesToProcess) {
+    const m = reSlashDate.exec(raw)
+    if (!m) continue
+    if (Number(m[1]) > 12) { slashOrder = 'DMY'; break }
+    if (Number(m[2]) > 12) { slashOrder = 'MDY'; break }
   }
   // Try parsing MongoDB structured JSON lines
   const tryParseMongoJSON = (s: string) => {
@@ -216,6 +230,12 @@ export function parseLog(text: string, fileId: string = '', fileName: string = '
   // Airlock Enforcement Agent execution decisions, e.g.:
   // 2026-01-05 10:00:03 FILE CHECK Filename=/usr/bin/x Hash="..." Type=2 Result="Blocking File - Untrusted Execution [Audit]" ...
   const reAirlockFileCheck = /^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:[.,]\d+)?)\s+(FILE CHECK\s.*)$/
+  // Airlock Enforcement Agent on Windows: tab-separated time, kind, thread id and message, e.g.:
+  // 01/13/2026 9:00:00 AM<TAB>INFO<TAB>1234<TAB>Proxy not configured
+  // Kind is INFO, DEBUG, WARNING, ERROR, FILE CHECK or FILE PRE-CHECK. A blocked FILE CHECK is followed by an
+  // untimestamped "Blocking Reasons: ..." line, which joins it as a continuation. The thread id stays in the
+  // message, in brackets, so one worker's lines can be followed.
+  const reAirlockWin = /^(\d{1,2}\/\d{1,2}\/\d{4} \d{1,2}:\d{2}:\d{2}(?: [AP]M)?)\t([A-Z][A-Z -]*)\t(\d+)(?:\t(.*))?$/
   // Go standard logger with file:line, used by the Airlock server services (clientapi, cloudsvc, cdsync, extlogger, rest, trustbuilder), e.g.:
   // 2026/01/05 10:00:00 service.go:120: POST /api/submitfile from ip: 10.0.0.5 hostname: host
   const reGoLog = /^(\d{4}\/\d{2}\/\d{2} \d{2}:\d{2}:\d{2}(?:[.,]\d+)?) ([\w.-]+\.go:\d+): ?(.*)$/
@@ -251,13 +271,24 @@ export function parseLog(text: string, fileId: string = '', fileName: string = '
       push(parseDate(fc[1]), fc[1], airlockFileCheckLevel(fc[2]), 'FILE CHECK', fc[2], rawLine)
       continue
     }
+    const aw = line.match(reAirlockWin)
+    if (aw) {
+      const [, tsStr, kind, thread, msg = ''] = aw
+      const isCheck = kind.startsWith('FILE ')
+      // Execution and browser extension decisions take their level from the result, like the Linux agent's
+      const isDecision = kind === 'FILE CHECK' || msg.startsWith('[EXT-BLOCK] Extension Title:')
+      const level: LogLevel = isDecision ? airlockFileCheckLevel(msg) : kind === 'FILE PRE-CHECK' ? 'DEBUG' : (levelMap[kind] ?? 'INFO')
+      // Read month first, as the agent was seen to write it, unless the file shows otherwise
+      push(parseDate(tsStr, slashOrder ?? 'MDY'), tsStr, level, isCheck ? kind : '', `${isCheck ? kind + ' ' : ''}[${thread}] ${msg}`, rawLine)
+      continue
+    }
     const gl = line.match(reGoLog)
     if (gl) {
       push(parseDate(gl[1]), gl[1], looseLevel(gl[3]), gl[2], `${gl[2]}: ${gl[3]}`, rawLine)
       continue
     }
 
-    const ts = detectTimestamp(line)
+    const ts = detectTimestamp(line, slashOrder)
     if (!ts) {
       const bt = line.match(reBracketTs)
       if (bt) {
@@ -268,7 +299,7 @@ export function parseLog(text: string, fileId: string = '', fileName: string = '
       const act = line.match(reAirlockActivity)
       if (act) {
         const [, tsStr, category, user, msg] = act
-        push(parseDate(tsStr), tsStr, 'INFO', category, [category, user, msg].filter(Boolean).join(' | '), rawLine)
+        push(parseDate(tsStr, slashOrder), tsStr, 'INFO', category, [category, user, msg].filter(Boolean).join(' | '), rawLine)
         continue
       }
       const pm = line.match(rePassenger)

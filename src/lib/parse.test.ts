@@ -83,6 +83,90 @@ describe('parseLog: Airlock agent lines', () => {
   })
 })
 
+describe('parseLog: Airlock Windows agent lines', () => {
+  // Made-up lines in the Windows agent's tab-separated format
+  const w = (ts: string, kind: string, thread: number, msg: string) => `${ts}\t${kind}\t${thread}\t${msg}`
+  const hash = 'ab'.repeat(32)
+  const check = (file: string, result: string) =>
+    w('01/13/2026 9:00:03 AM', 'FILE CHECK', 300, `Filename: ${file}, Hash: ${hash}, Rtype=17, PPID=4000, Result: ${result}`)
+  const reasons = (file: string) =>
+    `Blocking Reasons: Hash: ${hash} not found in the database, Path: ${file} not found in Path Exclusion, Publisher: Not Signed not found in Publisher Exclusion, Parent Process: C:\\Windows\\explorer.exe not found in Process Exclusion`
+
+  it('splits time, kind, thread and message, reading the date month first', () => {
+    const [entry] = parseLog(w('01/05/2026 2:40:22 PM', 'INFO', 1234, 'Proxy not configured'))
+    expect(entry.time?.getTime()).toBe(new Date(2026, 0, 5, 14, 40, 22).getTime())
+    expect(entry.timeStr).toBe('01/05/2026 2:40:22 PM')
+    expect(entry.level).toBe('INFO')
+    expect(entry.message).toBe('[1234] Proxy not configured')
+  })
+
+  it('reads every date day first when one line in the file can only be day first', () => {
+    const entries = parseLog([
+      w('05/01/2026 2:40:22 PM', 'INFO', 1, 'first'),
+      w('13/01/2026 2:40:22 PM', 'INFO', 1, 'second'),
+    ].join('\r\n'))
+    expect(entries.map(e => e.time?.getTime())).toEqual([
+      new Date(2026, 0, 5, 14, 40, 22).getTime(),
+      new Date(2026, 0, 13, 14, 40, 22).getTime(),
+    ])
+  })
+
+  it('maps the kind to a level', () => {
+    const entries = parseLog([
+      w('01/13/2026 9:00:00 AM', 'WARNING', 1, 'Interop PID: 1234'),
+      w('01/13/2026 9:00:00 AM', 'ERROR', 1, 'AutoUpdate ~ Installer agent download failed'),
+      w('01/13/2026 9:00:00 AM', 'DEBUG', 1, 'ScanHash result: 5'),
+      w('01/13/2026 9:00:00 AM', 'FILE PRE-CHECK', 1, 'Filename: C:\\Tools\\a.exe, FileType: 17, Parent: C:\\Windows\\explorer.exe, GrandParent: C:\\Windows\\System32\\userinit.exe, User: tester'),
+    ].join('\r\n'))
+    expect(entries.map(e => e.level)).toEqual(['WARN', 'ERROR', 'DEBUG', 'DEBUG'])
+    expect(entries[3].source).toBe('FILE PRE-CHECK')
+    expect(entries[3].message.startsWith('FILE PRE-CHECK [1] Filename: C:\\Tools\\a.exe, FileType: 17')).toBe(true)
+  })
+
+  it('takes the FILE CHECK level from the result, not from words in the path', () => {
+    const entries = parseLog([
+      check('C:\\Tools\\Debug\\Blocker\\error.dll', 'Allowing file to run - Trusted Publisher Execution'),
+      check('C:\\Tools\\a.exe', '(CACHED) Blocking File - Blocked Execution'),
+      check('C:\\Tools\\a.exe', 'Blocking File - Untrusted Execution [Audit]'),
+      check('C:\\Tools\\run.ps1', 'Blocking File - Constrained Execution'),
+    ].join('\r\n'))
+    expect(entries.map(e => e.level)).toEqual(['INFO', 'ERROR', 'WARN', 'WARN'])
+    expect(entries[0].source).toBe('FILE CHECK')
+    expect(entries[0].message).toBe(`FILE CHECK [300] Filename: C:\\Tools\\Debug\\Blocker\\error.dll, Hash: ${hash}, Rtype=17, PPID=4000, Result: Allowing file to run - Trusted Publisher Execution`)
+  })
+
+  it('joins the Blocking Reasons line to its FILE CHECK', () => {
+    const entries = parseLog([
+      check('C:\\Tools\\a.exe', 'Blocking File - Blocked Execution'),
+      reasons('C:\\Tools\\a.exe'),
+      w('01/13/2026 9:00:04 AM', 'INFO', 300, 'Deleting memory for tester groups count: 14, PID: 4000'),
+    ].join('\r\n'))
+    expect(entries).toHaveLength(2)
+    expect(entries[0].level).toBe('ERROR')
+    expect(entries[0].message.split('\n')[1]).toBe(reasons('C:\\Tools\\a.exe'))
+  })
+
+  it('marks a blocked browser extension as an error, and as a warning in audit mode', () => {
+    const ext = (result: string) => w('01/13/2026 9:00:05 AM', 'INFO', 7, `[EXT-BLOCK] Extension Title: Example Helper, Hash: ${hash}, Extension Folder: \\Users\\tester\\Extensions\\abc, Extension Path: C:\\Temp\\abc_1.crx, Browser: Microsoft Edge, Result: ${result}`)
+    const entries = parseLog([
+      ext('Blocking Extension - Blocked Execution'),
+      ext('Blocking Extension - Untrusted Execution [Audit]'),
+    ].join('\r\n'))
+    expect(entries.map(e => e.level)).toEqual(['ERROR', 'WARN'])
+    expect(entries[0].message.startsWith('[7] [EXT-BLOCK] Extension Title: Example Helper')).toBe(true)
+  })
+
+  it('keeps tabs inside a message and skips the blank line the agent writes after it', () => {
+    const entries = parseLog([
+      w('01/13/2026 9:00:06 AM', 'DEBUG', 9, 'Airlock AppX EVT authority reconcile activeActivities=0\t desiredPid=0\t authorizedPid=0\t ambiguous='),
+      '',
+      w('01/13/2026 9:00:06 AM', 'INFO', 9, 'Cache cleared!'),
+    ].join('\r\n'))
+    expect(entries).toHaveLength(2)
+    expect(entries[0].message).toBe('[9] Airlock AppX EVT authority reconcile activeActivities=0\t desiredPid=0\t authorizedPid=0\t ambiguous=')
+  })
+})
+
 describe('parseLog: Airlock server logs', () => {
   it('parses Go service lines and keeps file:line in the message', () => {
     const entries = parseLog([

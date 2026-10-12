@@ -14,6 +14,7 @@ export const AIRLOCK_FIELD_GROUPS = [
       'Errors and Warnings',
       'Agent PID',
       'Agent Hash',
+      'Agent Memory',
       'Kernel Mode',
       'RPC',
       'AutoUpdate Enabled',
@@ -60,11 +61,15 @@ export const AIRLOCK_FIELD_GROUPS = [
       'Self Service Enabled',
       'Powershell Constrained Mode',
       'Assembly Reflection Enabled',
+      'Extension Blocking',
+      'Aggressive Boot',
+      'Auto Elevate',
       'File Extensions Added',
       'Publishers Loaded',
       'Path Exclusions',
       'Parent Processes',
       'Blocklist Metarules loaded',
+      'Blocklist Pathrules loaded',
       'Allowlist Metarules loaded',
       'Allowlist Browser Extensions loaded',
       'Interops Found',
@@ -78,6 +83,7 @@ export const AIRLOCK_FIELD_GROUPS = [
       'Allowed Executions',
       'Blocked Executions',
       'Audit Blocks',
+      'Constrained Executions',
       'Execution Results',
       'Top Executed File',
       'Top Blocked File',
@@ -86,6 +92,9 @@ export const AIRLOCK_FIELD_GROUPS = [
       'Users Seen',
       'Interop Checks',
       'Block Notifications',
+      'Blocked Browser Extensions',
+      'Audit Browser Extensions',
+      'Untrusted Files Submitted',
     ],
   },
 ] as const
@@ -156,9 +165,23 @@ const reAgentLine = /^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) (INFO|WARN|ERROR|DEB
 const reFileCheck = /^Filename=(.+?) Hash=(?:"[^"]*"|\S+) Type=\d+ Result="([^"]*)"(.*)$/
 const reGuid = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi
 
-// One pass over the Linux agent's lines, collecting everything the newer fields need
-function collectAgentStats(lines: string[]) {
-  const s = {
+// Windows agent lines are tab-separated: "01/13/2026 9:00:00 AM<TAB>INFO<TAB>1234<TAB>message".
+// The kind is INFO, DEBUG, WARNING, ERROR, FILE CHECK or FILE PRE-CHECK; the number is a thread id.
+const reWinAgentLine = /^(\d{1,2}\/\d{1,2}\/\d{4} \d{1,2}:\d{2}:\d{2}(?: [AP]M)?)\t([A-Z][A-Z -]*)\t(\d+)\t(.*)$/
+// FILE CHECK: Filename: C:\x.exe, Hash: <sha256>, Rtype=17, PPID=4000, Result: (CACHED) Blocking File - Blocked Execution
+// A block is followed by an untimestamped line:
+// Blocking Reasons: Hash: <sha256> not found in the database, Path: C:\x.exe not found in Path Exclusion, Publisher: Not Signed not found in Publisher Exclusion, Parent Process: C:\y.exe not found in Process Exclusion
+const reWinFileCheck = /^Filename: (.+?), Hash: .*?\bResult: (.*)$/
+// FILE PRE-CHECK: Filename: C:\x.exe, FileType: 17, Parent: C:\y.exe, GrandParent: C:\z.exe, User: tester, Hash: <sha256>, Publisher: Not Signed
+const reWinPreCheckUser = /, GrandParent: .*?, User: ([^,]+)/
+// Browser extension decisions are INFO lines:
+// [EXT-BLOCK] Extension Title: Example, Hash: <sha256>, Extension Folder: \Users\..., Extension Path: C:\...\x.crx, Browser: Microsoft Edge, Result: Blocking Extension - Blocked Execution
+// In audit mode the result is "Blocking Extension - Untrusted Execution [Audit]"
+const reWinExtension = /^\[EXT-BLOCK\] Extension Title: (.*?), Hash: .*, Browser: (.*?), Result: (.*)$/
+
+function newAgentStats(platform: 'linux' | 'windows') {
+  return {
+    platform,
     agentLines: 0,
     starts: 0,
     stops: 0,
@@ -214,7 +237,29 @@ function collectAgentStats(lines: string[]) {
     notifications: 0,
     allowMetarules: new Set<string>(),
     blockMetarules: new Set<string>(),
+    // Only the Windows agent logs these
+    filterStarted: false,
+    autoUpdate: [] as string[],
+    selfService: [] as string[],
+    reflection: [] as string[],
+    extensionBlocking: [] as string[],
+    aggressiveBoot: [] as string[],
+    autoElevate: [] as string[],
+    interopNames: new Set<string>(),
+    blockedExtensions: new Map<string, number>(),
+    auditExtensions: new Map<string, number>(),
+    constrained: 0,
+    // Items loaded by the latest policy load, by kind ("Publishers", "Path Exclusions", ...)
+    loaded: new Map<string, number>(),
+    languageModes: [] as string[],
+    memory: null as string | null,
+    submitted: 0,
   }
+}
+
+// One pass over the Linux agent's lines, collecting everything the newer fields need
+function collectAgentStats(lines: string[]) {
+  const s = newAgentStats('linux')
 
   for (const line of lines) {
     const m = reAgentLine.exec(line)
@@ -310,10 +355,126 @@ function collectAgentStats(lines: string[]) {
   return s
 }
 
+// The same pass for the Windows agent, filling the same shape
+function collectWindowsAgentStats(lines: string[]) {
+  const s = newAgentStats('windows')
+  const mb = (bytes: string) => (Number(bytes) / 1048576).toFixed(1)
+  // True right after a blocked FILE CHECK, whose "Blocking Reasons:" line comes next
+  let afterBlock = false
+  // Which list each worker thread is checking, so a metarule check can be put down to the right one
+  const checking = new Map<string, 'block' | 'allow'>()
+
+  for (const line of lines) {
+    const m = reWinAgentLine.exec(line)
+    if (!m) {
+      if (afterBlock && line.startsWith('Blocking Reasons:')) {
+        const parent = line.match(/, Parent Process: (.*?) not found in /)
+        if (parent) bump(s.blockedParents, parent[1])
+        const publisher = line.match(/, Publisher: (.*?) not found in /)
+        if (publisher) bump(s.blockedPublishers, publisher[1])
+      }
+      afterBlock = false
+      continue
+    }
+    afterBlock = false
+    const ts = m[1], kind = m[2], thread = m[3], msg = m[4]
+    s.agentLines += 1
+    if (!s.firstTs) s.firstTs = ts
+    s.lastTs = ts
+    let mm: RegExpMatchArray | null
+
+    if (kind === 'DEBUG') {
+      s.debugLines += 1
+      if (msg.endsWith(' start blocklist processing...') || msg.endsWith(' re-checking blocklist metarules')) checking.set(thread, 'block')
+      else if (msg.endsWith(' start allowlist processing...') || msg.endsWith(' re-checking allowlist metarules')) checking.set(thread, 'allow')
+      // Filename: C:\x.exe, Package: 123, Metarule: name[<guid>] Check: origname match name
+      else if ((mm = msg.match(/, Metarule: .*\[([0-9a-f-]{36})\] Check: /i))) {
+        const list = checking.get(thread)
+        if (list === 'block') s.blockMetarules.add(mm[1])
+        else if (list === 'allow') s.allowMetarules.add(mm[1])
+      }
+      else if ((mm = msg.match(/^\[CONSTRAINED-MODE\] Setting Powershell Language Mode to (.+?)\.*$/))) s.languageModes.push(mm[1].trim())
+      if ((mm = msg.match(/^Extension Blocking is (.+)$/))) s.extensionBlocking.push(`${mm[1].charAt(0).toUpperCase()}${mm[1].slice(1).trim()} (logged at ${ts})`)
+      continue
+    }
+
+    if (kind === 'FILE PRE-CHECK') {
+      if ((mm = msg.match(reWinPreCheckUser))) bump(s.users, mm[1].trim())
+      continue
+    }
+
+    if (kind === 'FILE CHECK') {
+      const fc = reWinFileCheck.exec(msg)
+      if (!fc) {
+        // Older agents log less after the file name; still count the execution
+        if ((mm = msg.match(/^Filename:\s*([^,]+)/))) { s.execs += 1; bump(s.executed, mm[1].trim()) }
+        continue
+      }
+      const file = fc[1], result = fc[2].replace(/^\(CACHED\)\s*/, '')
+      s.execs += 1
+      bump(s.executed, file)
+      bump(s.results, result)
+      if (!/^Block/i.test(result)) { s.allowed += 1; continue }
+      if (/\[Audit\]/i.test(result)) s.auditBlocked += 1
+      else if (/Constrained Execution/i.test(result)) s.constrained += 1
+      else s.blocked += 1
+      bump(s.blockedFiles, file)
+      afterBlock = true
+      continue
+    }
+
+    if (kind === 'ERROR') s.errors += 1
+    else if (kind === 'WARNING') s.warnings += 1
+
+    if ((mm = msg.match(/^Starting Airlock Enforcement Agent \([^)]*\)(?: on (.+))?$/))) {
+      s.starts += 1
+      if (mm[1]) s.os = mm[1].trim()
+    }
+    else if (msg.startsWith('Airlock Digital - Closed!')) s.stops += 1
+    // 7.x no longer names what a policy load brings in: it writes one bare "Loading Publishers" style line per item
+    else if ((mm = msg.match(/^Loading ((?:Publishers|Path Exclusions|(?:Blocklist|Allowlist) (?:Metarules|Pathrules)))$/))) bump(s.loaded, mm[1])
+    else if (msg.startsWith('Sent Signal for Kernel to start')) s.filterStarted = true
+    else if ((mm = msg.match(/^Computer Name:\s*([^,]+)/))) s.computer = mm[1].trim()
+    else if ((mm = msg.match(/^Local IP:\s*(\S+)/))) s.ip = mm[1]
+    else if ((mm = msg.match(/^Configuration ~ Primary Airlock Server ~ (\S+) \(fallback\)/))) s.fallback = mm[1]
+    else if (msg.startsWith('Establish Connection ~ Connect Error Details')) s.connFail += 1
+    else if (msg.startsWith('Establish Connection ~ Connect ~')) {
+      if (msg.includes('contacted successfully')) s.connOk += 1
+      else if (!s.clientId && (mm = msg.match(/\/api\/(?:gethashdb|setpolicyver|setsafemode)\/([0-9a-f-]{36})/i))) s.clientId = mm[1]
+    }
+    else if (msg.startsWith('Check In ~ Report Status')) s.checkIns += 1
+    // The policy database is named after the client id, the hash database after the policy id
+    else if ((mm = msg.match(/^Opening Policy database: .*?([0-9a-f-]{36})\.db$/i))) { if (!s.clientId) s.clientId = mm[1]; s.loaded.clear() }
+    else if ((mm = msg.match(/^Initializing Hash database: .*?([0-9a-f-]{36})\.db$/i))) s.policyIds.push(mm[1])
+    else if ((mm = msg.match(/Client was moved to a new policy with policyid:\s*([0-9a-f-]{36})/i))) s.policyIds.push(mm[1])
+    else if ((mm = msg.match(/^Policy version retrieval - .* Policy Version: (\d+)$/))) s.policyVersions.push(mm[1])
+    else if ((mm = msg.match(/Policy Update ~ Checking for new policy version the current version is (\d+)/))) s.policyVersions.push(mm[1])
+    else if ((mm = msg.match(/Policy Update ~ New policy version applied successfully, version is now (\d+)/))) { s.policyVersions.push(mm[1]); s.policyUpdates += 1 }
+    else if ((mm = msg.match(/^Current hash database version verified:\s*(\d+)/))) s.hashDbVersions.push(mm[1])
+    else if ((mm = msg.match(/Hash DB Update ~ New hash database applied successfully, version is now (\d+)/))) s.hashDbVersions.push(mm[1])
+    else if ((mm = msg.match(/^Auditmode:\s*(true|false)/i))) s.auditModes.push({ value: mm[1].toLowerCase() === 'true' ? 'Yes' : 'No', ts })
+    else if ((mm = msg.match(/^AutoUpdate:\s*(true|false)/i))) s.autoUpdate.push(mm[1].toLowerCase() === 'true' ? 'True' : 'False')
+    else if ((mm = msg.match(/^AutoUpdate ~ Current Version: (\S+) Target Version: (\S+)/))) { s.currentVersion = mm[1]; s.serverVersion = mm[2] }
+    else if ((mm = msg.match(/^AutoElevate:\s*(true|false)/i))) s.autoElevate.push(mm[1].toLowerCase() === 'true' ? 'Yes' : 'No')
+    else if ((mm = msg.match(/^Assembly Reflection:\s*(\w+)/))) s.reflection.push(String(normalizeBool(mm[1])))
+    else if ((mm = msg.match(/^Self Service (?:is )?(enabled|disabled)(?: for (.+))?$/i))) s.selfService.push(mm[1].toLowerCase() === 'disabled' ? 'No' : mm[2] ? `Yes (${mm[2].trim()})` : 'Yes')
+    else if ((mm = msg.match(/^Aggressive Boot (?:is|was successfully) (enabled|disabled)/i))) s.aggressiveBoot.push(mm[1].toLowerCase() === 'enabled' ? 'Yes' : 'No')
+    else if ((mm = msg.match(/^Current Stats ~ Virtual Memory: (\d+) Physical Memory: (\d+) Handles: (\d+)/))) s.memory = `${mb(mm[2])} MB physical, ${mb(mm[1])} MB virtual, ${mm[3]} handles`
+    else if ((mm = msg.match(/^(.+?) Interop Detection: found/))) s.interopNames.add(mm[1].trim())
+    else if ((mm = reWinExtension.exec(msg))) {
+      if (/^Block/i.test(mm[3])) bump(/\[Audit\]/i.test(mm[3]) ? s.auditExtensions : s.blockedExtensions, `${mm[1]}, ${mm[2]}`)
+    }
+    else if (msg.includes('Uploading Events ~ Submitting untrusted file:')) s.submitted += 1
+  }
+  return s
+}
+
 export function extractAirlockSummary(text: string): Record<(typeof AIRLOCK_FIELDS)[number], string> {
   const lines = text.replace(/\r\n?/g, '\n').split('\n')
-  const stats = collectAgentStats(lines)
+  const linuxStats = collectAgentStats(lines)
+  const stats = linuxStats.agentLines > 0 ? linuxStats : collectWindowsAgentStats(lines)
   const count = (n: number) => (n > 0 ? String(n) : null)
+  const loaded = (kind: string) => (stats.loaded.has(kind) ? `${stats.loaded.get(kind)} (at last policy load)` : null)
   const get = (key: (typeof AIRLOCK_FIELDS)[number]): string | null => {
     switch (key) {
       case 'Agent Starts':
@@ -332,7 +493,25 @@ export function extractAirlockSummary(text: string): Record<(typeof AIRLOCK_FIEL
         return stats.pid
       case 'Agent Hash':
         return stats.agentHash
+      case 'Agent Memory':
+        return stats.memory
+      case 'Extension Blocking':
+        // Only logged when the agent starts, so the time matters: a later policy can change it without a line
+        return stats.extensionBlocking[stats.extensionBlocking.length - 1] ?? null
+      case 'Aggressive Boot':
+        return latestOf(stats.aggressiveBoot)
+      case 'Auto Elevate':
+        return latestOf(stats.autoElevate)
+      case 'Untrusted Files Submitted':
+        return count(stats.submitted)
+      case 'Blocked Browser Extensions':
+      case 'Audit Browser Extensions': {
+        const extensions = key === 'Blocked Browser Extensions' ? stats.blockedExtensions : stats.auditExtensions
+        if (extensions.size === 0) return null
+        return [...extensions].sort((a, b) => b[1] - a[1]).map(([e, c]) => `${e} (${c})`).join('\n')
+      }
       case 'Kernel Mode':
+        if (stats.filterStarted) return 'Filter driver started'
         if (stats.fanotify) return stats.driverError ? 'FANotify (kernel driver did not load)' : 'FANotify'
         return stats.driverError ? 'Kernel driver did not load' : null
       case 'RPC':
@@ -389,6 +568,10 @@ export function extractAirlockSummary(text: string): Record<(typeof AIRLOCK_FIEL
         return stats.execs > 0 ? String(stats.blocked) : null
       case 'Audit Blocks':
         return stats.execs > 0 ? String(stats.auditBlocked) : null
+      case 'Blocklist Pathrules loaded':
+        return loaded('Blocklist Pathrules')
+      case 'Constrained Executions':
+        return stats.platform === 'windows' && stats.execs > 0 ? String(stats.constrained) : null
       case 'Execution Results':
         if (stats.results.size === 0) return null
         return [...stats.results].sort((a, b) => b[1] - a[1]).map(([r, c]) => `${r} (${c})`).join('\n')
@@ -438,6 +621,7 @@ export function extractAirlockSummary(text: string): Record<(typeof AIRLOCK_FIEL
         return m ? String(m[2]) : null
       }
       case 'Interops Found': {
+        if (stats.interopNames.size > 0) return [...stats.interopNames].join(', ')
         // Count Interop PIDs
         const count = lines.reduce((acc, l) => acc + (/(^|\s)Interop\s+PID:\s*\d+/i.test(l) ? 1 : 0), 0)
         if (count > 0) return String(count)
@@ -491,6 +675,7 @@ export function extractAirlockSummary(text: string): Record<(typeof AIRLOCK_FIEL
         return m ? String(normalizeBool(m[1] as any)) : null
       }
       case 'AutoUpdate Enabled': {
+        if (stats.autoUpdate.length > 0) return latestOf(stats.autoUpdate)
         const m = findFirst(lines, [
           /^\S*\s*AutoUpdate:\s*(true|false|yes|no|on|off)/i,
           /(autoupdate|auto\s*update).*?\b(enabled|disabled|on|off|true|false)\b/i,
@@ -505,6 +690,7 @@ export function extractAirlockSummary(text: string): Record<(typeof AIRLOCK_FIEL
         return normalizeToTrueFalse(val)
       }
       case 'Powershell Constrained Mode': {
+        if (stats.languageModes.length > 0) return latestOf(stats.languageModes)
         // Detect default setting explicitly
         if (lines.find(l => /\[CONSTRAINED-MODE\].*Language\s*Mode\s*to\s*default/i.test(l))) return 'default'
         const m = findFirst(lines, [
@@ -516,14 +702,20 @@ export function extractAirlockSummary(text: string): Record<(typeof AIRLOCK_FIEL
         return String(normalizeBool(m[1] as any))
       }
       case 'File Extensions Added': {
-        const count = lines.reduce((acc, l) => acc + (/\bAdding\s+File\s+Extension:\s*\w+/i.test(l) ? 1 : 0), 0)
-        if (count > 0) return String(count)
+        // The list is logged again on every policy load, so count each extension once
+        const added = new Set<string>()
+        for (const l of lines) {
+          const mm = l.match(/\bAdding\s+File\s+Extension:\s*(\w+)/i)
+          if (mm) added.add(mm[1].toLowerCase())
+        }
+        if (added.size > 0) return String(added.size)
         const m = findFirst(lines, [
           /file\s*extensions?\s*added[:=\s]+(\d+)/i,
         ])
         return m ? String(m[1]) : null
       }
       case 'Publishers Loaded': {
+        if (stats.loaded.has('Publishers')) return loaded('Publishers')
         const count = lines.reduce((acc, l) => acc + (/\bLoading\s+Publisher:\s*/i.test(l) ? 1 : 0), 0)
         if (count > 0) return String(count)
         // Non-debug Airlock: tab-separated INFO lines with Found Publisher
@@ -535,6 +727,7 @@ export function extractAirlockSummary(text: string): Record<(typeof AIRLOCK_FIEL
         return m ? String(m[1]) : null
       }
       case 'Path Exclusions': {
+        if (stats.loaded.has('Path Exclusions')) return loaded('Path Exclusions')
         // Count exclusions; do not show actual data
         let count = 0
         for (const l of lines) {
@@ -553,6 +746,7 @@ export function extractAirlockSummary(text: string): Record<(typeof AIRLOCK_FIEL
         return count > 0 ? String(count) : null
       }
       case 'Assembly Reflection Enabled': {
+        if (stats.reflection.length > 0) return latestOf(stats.reflection)
         const m = findFirst(lines, [
           /assembly\s*reflection.*?(enabled|disabled|on|off|true|false)/i,
           /Reflection\s*Enabled[:=\s]+(true|false|yes|no|on|off)/i,
@@ -560,6 +754,7 @@ export function extractAirlockSummary(text: string): Record<(typeof AIRLOCK_FIEL
         return m ? String(normalizeBool(m[1] as any)) : null
       }
       case 'Self Service Enabled': {
+        if (stats.selfService.length > 0) return latestOf(stats.selfService)
         const m = findFirst(lines, [
           /self\s*service.*?(enabled|disabled|on|off|true|false)/i,
           /Self\s*Service[:=\s]+(true|false|yes|no|on|off)/i,
@@ -567,6 +762,7 @@ export function extractAirlockSummary(text: string): Record<(typeof AIRLOCK_FIEL
         return m ? String(normalizeBool(m[1] as any)) : null
       }
       case 'Blocklist Metarules loaded': {
+        if (stats.loaded.has('Blocklist Metarules')) return loaded('Blocklist Metarules')
         const m = findFirst(lines, [
           /blocklist\s*metarules?\s*(?:loaded|count)[:=\s]+(\d+)/i,
           /Blocklist\s*Metarules\s*loaded:\s*(\d+)/i,
@@ -587,6 +783,7 @@ export function extractAirlockSummary(text: string): Record<(typeof AIRLOCK_FIEL
         return stats.blockMetarules.size > 0 ? `${stats.blockMetarules.size} (seen in rule checks)` : null
       }
       case 'Allowlist Metarules loaded': {
+        if (stats.loaded.has('Allowlist Metarules')) return loaded('Allowlist Metarules')
         // Numeric total if present
         const m = findFirst(lines, [
           /allowlist\s*metarules?\s*(?:loaded|count)[:=\s]+(\d+)/i,
@@ -618,8 +815,9 @@ export function extractAirlockSummary(text: string): Record<(typeof AIRLOCK_FIEL
             if (g && /^\d+$/.test(g)) return g
           }
         }
-        // Fallback: count likely lines mentioning browser extensions
-        const count = lines.reduce((acc, l) => acc + (/Browser\s*Extension/i.test(l) ? 1 : 0), 0)
+        // Fallback: count likely lines mentioning browser extensions. [EXT-BLOCK] lines are the Windows agent
+        // working through one extension, not allowlist entries.
+        const count = lines.reduce((acc, l) => acc + (/Browser\s*Extension/i.test(l) && !l.includes('[EXT-BLOCK]') ? 1 : 0), 0)
         return count > 0 ? String(count) : null
       }
       case 'Parent Processes': {
@@ -801,8 +999,93 @@ function escapeRegex(s: string) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
+// Rows from the Windows agent read "<time> <LEVEL> [thread] message", or "<time> <LEVEL> FILE CHECK [thread] Filename: ..."
+function isWindowsSummary(data?: Record<AirlockField, string>): boolean {
+  if (!data) return false
+  if (data['Operating System']?.startsWith('Windows')) return true
+  return /^[A-Za-z]:\\|^\\\\/.test(data['Top Executed File'] ?? '')
+}
+
+// Searches that differ for the Windows agent; null means the shared one below applies
+function windowsFieldSearchString(key: AirlockField, data: Record<AirlockField, string>): string | null {
+  const value = () => escapeRegex(data[key].replace(/\s*\(\d+\)\s*$/, ''))
+  switch (key) {
+    case 'Agent Stops':
+      return 'Airlock Digital - Closed!'
+    case 'Debug Logging':
+      return '[AP]M DEBUG \\['
+    case 'Errors and Warnings':
+      // A blocked browser extension is an ERROR row too, but it is a decision, not an agent error
+      return '(ERROR|WARN) \\[\\d+\\] (?!\\[EXT-BLOCK\\] Extension Title)'
+    case 'Agent Memory':
+      return 'Current Stats ~'
+    case 'Kernel Mode':
+      return 'Sent Signal for Kernel to start'
+    case 'Server Agent Version':
+      return 'AutoUpdate ~ Current Version'
+    case 'Operating System':
+      return 'Starting Airlock Enforcement Agent'
+    case 'Local IP Address':
+      return 'Local IP:'
+    case 'Server Connections':
+      return 'contacted successfully|Connect Error Details'
+    case 'Policy Id':
+      return 'Initializing Hash database|policyid:'
+    case 'Extension Blocking':
+      return 'Extension Blocking is'
+    case 'Aggressive Boot':
+      return 'Aggressive Boot'
+    case 'Auto Elevate':
+      return 'AutoElevate:'
+    case 'Interops Found':
+      return 'Interop Detection|Interop PID'
+    case 'Execution Count':
+    case 'Execution Results':
+      return 'FILE CHECK \\[\\d+\\] Filename:'
+    case 'Allowed Executions':
+      return 'PPID=\\d+, Result: (\\(CACHED\\) )?Allow'
+    case 'Blocked Executions':
+      return 'PPID=\\d+, Result: (\\(CACHED\\) )?Block(?![^\\n]*(\\[Audit\\]|Constrained Execution))'
+    case 'Constrained Executions':
+      return 'PPID=\\d+, Result: [^\\n]*Constrained Execution'
+    case 'Powershell Constrained Mode':
+      return 'Setting Powershell Language Mode'
+    case 'Blocklist Metarules loaded':
+    case 'Allowlist Metarules loaded':
+      return data[key].includes('rule checks') ? ', Metarule: .*\\] Check: ' : null
+    case 'Publishers Loaded':
+      return data[key].includes('policy load') ? 'Loading Publishers' : null
+    case 'Blocklist Pathrules loaded':
+      return 'Loading Blocklist Pathrules'
+    case 'Audit Blocks':
+      return 'PPID=\\d+, Result: [^\\n]*\\[Audit\\]'
+    case 'Top Executed File':
+      return `FILE CHECK \\[\\d+\\] Filename: ${value()}, Hash`
+    case 'Top Blocked File':
+      return `FILE CHECK \\[\\d+\\] Filename: ${value()}, Hash.*Result: (\\(CACHED\\) )?Block`
+    case 'Top Blocked Parent':
+      return `, Parent Process: ${value()} not found`
+    case 'Top Blocked Publisher':
+      return `, Publisher: ${value()} not found in Publisher Exclusion`
+    case 'Users Seen':
+      return 'GrandParent: .*, User: '
+    case 'Untrusted Files Submitted':
+      return 'Submitting untrusted file'
+    case 'Blocked Browser Extensions':
+      return '\\[EXT-BLOCK\\] Extension Title: .*, Result: Block(?![^\\n]*\\[Audit\\])'
+    case 'Audit Browser Extensions':
+      return '\\[EXT-BLOCK\\] Extension Title: .*\\[Audit\\]'
+    default:
+      return null
+  }
+}
+
 // Preferred plain-text search tokens for filtering (non-regex)
 export function getAirlockFieldSearchString(key: (typeof AIRLOCK_FIELDS)[number], data?: Record<(typeof AIRLOCK_FIELDS)[number], string>): string {
+  if (data && isWindowsSummary(data) && data[key] && data[key] !== '—') {
+    const token = windowsFieldSearchString(key, data)
+    if (token != null) return token
+  }
   switch (key) {
     case 'Airlock Version':
       return 'Starting Airlock Enforcement Agent'
