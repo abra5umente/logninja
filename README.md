@@ -95,26 +95,17 @@ Markdown summary export:
 Settings with system / light / dark modes and five colour palettes:
 ![Settings panel with appearance, palette and keymap](docs/screenshots/settings.png)
 
-## Supported Formats (non‑exhaustive)
-- ISO 8601 / RFC 3339 (`2026-01-05T10:00:01.123Z`, `...+10:00`, or no zone, read as local time), `YYYY-MM-DD HH:mm:ss[.SSS|,SSS]`
-- `YYYY/MM/DD HH:mm:ss[.SSS|,SSS]`
-- DMY/MDY `dd/MM/yyyy HH:mm:ss[.SSS][ AM|PM]` (inferred)
-- `dd Mon yyyy HH:mm:ss[.SSS]`
-- Apache/Nginx combined: `dd/Mon/yyyy:HH:mm:ss Z`
-- Redis: `PID:Role dd Mon yyyy HH:mm:ss.mmm <level-symbol> ...`
-- Resque: `name: [LEVEL] <ISO ts>: message`
-- Ruby logger lines: `W, [ISO ts #pid] WARN -- : message`
-- MongoDB structured JSON `{ "t": { "$date": ... }, "s": "I", "msg": ... }`
-- MSI: `MSI (c|s) (...) [HH:mm:ss:SSS]: message` (time‑only; date inferred from the file) or `MSI (c|s) (...) [YYYY-MM-DD HH:mm:ss:SSS]: message`
-- Airlock agent (Linux): `YYYY-MM-DD HH:mm:ss INFO|WARN|ERROR|DEBUG message` and `FILE CHECK Filename=... Result="..."` (blocked = ERROR, blocked in audit mode = WARN, allowed = INFO)
-- Airlock agent (macOS): the same lines as the Linux agent, with file names that contain a space written in quotes (`Filename="/Applications/Some App.app/..."`), plus `YYYY-MM-DD HH:mm:ss INFO  FILE CHECK Filename: <path>, OpType: 11, Result: ...` for Apple's own binaries (level from the result), `FILE CHECK Extension Title="..." ... Browser="..." Result="..."` for browser extensions (blocked = ERROR, blocked in audit mode = WARN) and `INFO  ERROR: ...` lines such as `ERROR: es_new_client() failed with 4`, which are marked ERROR
-- Airlock agent (Windows): tab-separated `MM/DD/YYYY h:mm:ss AM|PM`, kind (`INFO|WARNING|ERROR|DEBUG|FILE CHECK|FILE PRE-CHECK`), thread id, message. `FILE CHECK ... Result: ...` and `[EXT-BLOCK] Extension Title: ... Result: ...` take their level from the result (blocked = ERROR, blocked in audit mode or run in PowerShell Constrained Language Mode = WARN, allowed = INFO); the `Blocking Reasons:` line joins its `FILE CHECK` row; the thread id is kept as `[1234]` at the start of the message
-- Airlock server services (Go logger): `YYYY/MM/DD HH:mm:ss file.go:123: message`
-- Airlock server workers: `[YYYY-MM-DD HH:mm:ss] [Tag] message`, `[<ISO ts>] message`
-- Airlock server activity: `ServerActivityMessage|dd/MM/yyyy hh:mm:ss AM|Category|user|message`
-- Phusion Passenger: `[ N YYYY-MM-DD HH:mm:ss.SSSS pid/thread file.cpp:123 ]: message`
-- `date` output: `Mon Jan  5 08:00:00 AEDT 2026 - message`
-- Resque job lines (`*** got: ...`) and other lines with no timestamp before the first timestamped line are kept as rows without a time
+## Supported Formats (non-exhaustive)
+
+LogNinja reads timestamps and levels from most common log layouts, including:
+
+- ISO 8601 / RFC 3339, plus `YYYY-MM-DD` and `YYYY/MM/DD` date-time variants
+- DMY/MDY dates (`dd/MM/yyyy HH:mm:ss`, AM/PM inferred) and `dd Mon yyyy HH:mm:ss`
+- Apache/Nginx combined, Redis, Resque, Ruby logger, MongoDB JSON
+- MSI installer logs, Phusion Passenger, and `date` output
+- Airlock Digital v7.x agent and server log types (Windows, Linux, macOS)
+
+Lines with no timestamp before the first timestamped line are kept as rows without a time.
 
 ## Getting Started
 
