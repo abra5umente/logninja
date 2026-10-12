@@ -54,6 +54,14 @@ export default function CommandPalette({ open, onClose, items }: {
                 enablePizzaTheme()
               }
             }}
+            onKeyDown={(e) => {
+              // Enter runs the top match
+              if (e.key === 'Enter' && filtered.length > 0) {
+                e.preventDefault()
+                filtered[0].run()
+                onClose()
+              }
+            }}
             placeholder="type a command…"
             className="in"
           />

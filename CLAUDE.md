@@ -31,14 +31,14 @@ Unit tests use Vitest and sit next to the code they cover (e.g. `src/lib/parse.t
 
 ### Load pipeline
 
-`FileDropZone` (window-wide drag-and-drop plus Browse button) decodes each file (UTF-8 / UTF-16 BOM detection) and calls `onText(text, name)` in App. `onText`:
+App's window-wide drop handler and the hidden Browse input both go through `loadFiles`, which takes any file name (rotated logs like `server.log.1`, `syslog`) and reads each with `readLogFile` (`lib/decode.ts`: UTF-8 / UTF-16 BOM detection plus BOM-less UTF-16, then `looksLikeText` rejects archives and other binary files, which are listed in a `SkippedNotice`; don't go back to `file.text()`, which garbles UTF-16). Each text file goes to `onText(text, name)`. `onText`:
 
-1. Generates a `fileId`, assigns a color from `FILE_COLORS`.
-2. If `isAirlockDebugFileName(name)` matches (`/airlock[\w.-]*\.log$/i`), runs `extractAirlockSummary` and opens the Airlock modal.
-3. Calls `parseLog(text, fileId, name)` from `lib/parse.ts`.
+1. Generates a `fileId` and calls `parseLog(text, fileId, name)` from `lib/parse.ts` (outside any state updater, so it runs once and the load time is real).
+2. If `isAirlockDebugFileName(name)` matches (`/airlock[\w.-]*\.log$/i`), runs `extractAirlockSummary`, remembers the file as `airlockFileId` and opens the Airlock modal.
+3. Adds the file with the first `FILE_COLORS` colour not already in use.
 4. Merges into existing entries, sorts by time (null timestamps last), and **re-indexes every entry** so `entry.index` is its position in the merged array.
 
-All of this is done with nested functional `setState` updates because several files can be dropped at once; keep it that way to avoid stale closures.
+State changes use functional `setState` updates because several files can be dropped before React re-renders; keep it that way to avoid stale closures. `removeFile` drops the file's entries and bookmarks, takes it out of `selectedFiles`, clears the Airlock summary if it came from that file, and resets every filter when the last file goes.
 
 ### Parsing (`lib/parse.ts`)
 
@@ -46,16 +46,16 @@ All of this is done with nested functional `setState` updates because several fi
 
 ### Filtering and search
 
-`FiltersState` (`lib/types.ts`) drives one big `filtered` `useMemo` in App. Filters combine: `selectedFiles`, `selectedLevels` (falls back to deprecated `selectedLevel`), `timeRange` (end-exclusive; entries without a timestamp are dropped while a time range is active), `showBookmarksOnly` + `bookmarkContext`, and the search query.
+`FiltersState` (`lib/types.ts`) drives the `baseFiltered` and `filtered` memos in App. `passesBaseFilters` (`lib/filter.ts`) applies `selectedFiles`, `selectedLevels` (falls back to deprecated `selectedLevel`) and `timeRange` (end-exclusive; entries without a timestamp are dropped while a time range is active). On top of that, `showBookmarksOnly` shows bookmarks plus `bookmarkContext` rows either side, taken from the base-filtered rows (`withBookmarkContext`), and otherwise the search query applies per mode.
 
 Search has three behaviours:
-- `searchMode: 'find'` (the default): does **not** filter; App computes `matchingIndices` and Enter / Shift+Enter jumps between them via `currentMatchIndex`.
+- `searchMode: 'find'` (the default): does **not** filter; App computes `matchingKeys` (entry keys) and Enter / Shift+Enter jumps between them via `currentMatchIndex`.
 - `searchMode: 'filter'`: hides non-matching rows.
 - `highlightOnly`: like find, shows everything and only highlights.
 
-`buildSearchRegex` (`lib/search.ts`) escapes plain text or compiles user regex with flags `gi`, strips PCRE `(?i)`, rejects patterns over 1000 chars or containing `.*.*`, `++`, `**`, and returns `{ re: null }` on any failure. Matching runs against `` `${timeStr} ${level} ${message}` ``, not the raw line or `source`. `RegexBuilder` + `lib/regexBuilder.ts` is the query builder: a `BuilderQuery` is `include` terms (match `any` or `all`) plus `exclude` terms, each `text` (escaped, `*` becomes `.*?`) or `regex`. `buildPattern` matches the wanted terms themselves (so they highlight) and puts the all-of / none-of checks in a lookbehind anchored at `^`: `(?:a|b)(?<=^(?=[\s\S]*?a)(?=[\s\S]*?b)(?![\s\S]*?x)[\s\S]*)`. Highlighting runs per cell, so an all-of term in another column (e.g. the level) can leave a matched row unhighlighted. `SearchBar` remembers the last built query and reopens it (or a saved query with the same regex, or one seeded from the search box by `queryFromSearch`) when "edit query" / "build query" is clicked. Saved queries live in `lib/savedQueries.ts` (localStorage key `logninja.savedQueries`, a small store with `useSavedQueries`) and appear in `PresetsDropdown`.
+`buildSearchRegex` (`lib/search.ts`) escapes plain text or compiles user regex with flags `gi`, strips PCRE `(?i)`, rejects patterns over 1000 chars or containing `.*.*`, `++`, `**`, and returns `{ re: null }` on any failure. Matching runs against `` `${timeStr} ${level} ${message}` ``, not the raw line or `source`; the table shows times in local time via `formatEntryTime` (`lib/formatTime.ts`), matching the timeline, and highlighting runs on that displayed text. `RegexBuilder` + `lib/regexBuilder.ts` is the query builder: a `BuilderQuery` is `include` terms (match `any` or `all`) plus `exclude` terms, each `text` (escaped, `*` becomes `.*?`) or `regex`. `buildPattern` matches the wanted terms themselves (so they highlight) and puts the all-of / none-of checks in a lookbehind anchored at `^`: `(?:a|b)(?<=^(?=[\s\S]*?a)(?=[\s\S]*?b)(?![\s\S]*?x)[\s\S]*)`. Highlighting runs per cell, so an all-of term in another column (e.g. the level) can leave a matched row unhighlighted. `SearchBar` remembers the last built query and reopens it (or a saved query with the same regex, or one seeded from the search box by `queryFromSearch`) when "edit query" / "build query" is clicked. Saved queries live in `lib/savedQueries.ts` (localStorage key `logninja.savedQueries`, a small store with `useSavedQueries`) and appear in `PresetsDropdown`.
 
-When adding a filter field: add it to `FiltersState`, the initial state and the reset handler in App, the `filtered` memo (and `matchingIndices` if it should affect find mode), and the Markdown summary in `lib/export.ts` (`buildMarkdownSummary`, which currently only reads the deprecated `selectedLevel`).
+When adding a filter field: add it to `FiltersState`, the initial state and the reset handler in App, `passesBaseFilters` (which feeds `filtered`, `matchingKeys` and the bookmark view) or the `filtered` memo, and the Markdown summary in `lib/export.ts` (`buildMarkdownSummary`).
 
 ### Styling
 
@@ -63,11 +63,15 @@ When adding a filter field: add it to `FiltersState`, the initial state and the 
 
 ### Virtual table
 
-`VirtualTable.tsx` always virtualises: fixed row height 28px (no-wrap) or an estimated 48px (wrap, rows may grow), 12 rows overscan, highlighting disabled when more than 1000 rows are passed in. It needs a **numeric pixel `height` prop**, the height of the whole panel (header plus rows). App measures the table's wrapper in the centre column (`flex-1 min-h-0`, so its size comes from the viewport and the timeline, never from the table's content) with a `ResizeObserver` and passes it as `tableHeight` (min 160, fallback 600). Inside, the header keeps its natural height and the rows container fills the rest; it is the only scroller, in both directions, and the column labels follow its horizontal scroll via a transform. Don't make the panel's own height auto: the scroll math depends on a known viewport height and earlier attempts caused effect loops and crashes on file load.
+`VirtualTable.tsx` always virtualises: fixed row height 28px (no-wrap); in wrap mode rows start at a 48px guess and each rendered row is measured (a `ResizeObserver` plus a re-read after every render, since a reused row that moved doesn't resize) into a per-position height array that feeds row offsets, and jumping to the selected row re-centres as measurements arrive until it settles or the user scrolls. 12 rows overscan, highlighting disabled when more than 1000 rows are passed in. It needs a **numeric pixel `height` prop**, the height of the whole panel (header plus rows). App measures the table's wrapper in the centre column (`flex-1 min-h-0`, so its size comes from the viewport and the timeline, never from the table's content) with a `ResizeObserver` and passes it as `tableHeight` (min 160, fallback 600). Inside, the header keeps its natural height and the rows container fills the rest; it is the only scroller, in both directions, and the column labels follow its horizontal scroll via a transform. Don't make the panel's own height auto: the scroll math depends on a known viewport height and earlier attempts caused effect loops and crashes on file load.
 
 ### Timeline
 
-`TimelinePanel.tsx` bins the currently filtered entries with `groupByBinsMs` (`lib/time.ts`) at five levels: Day → Hour → 15 min → Minute → Second (`LEVEL_CONFIG`). It starts at Hour if the span is ≤24h, otherwise Day. Clicking a bin both sets `filters.timeRange` and drills down one level; a history stack powers "Back to …". Min/max are computed with loops, not `Math.min(...arr)`, to avoid stack overflows on large inputs; keep it that way.
+`TimelinePanel.tsx` gets `timelineEntries` from App: rows after the file, level and (filter-mode) search filters but **not** the time range, so picking a range doesn't empty the bars around it. In find / highlight mode App also passes `isMatch`, and hits per bar show as a strip under the chart. The panel keeps a `view` range (null = the full extent) plus a history stack for "zoom out"; `pickBinMs` (`lib/time.ts`) picks the bar width from `BIN_STEPS` so a view has at most 72 bars, and `buildBins` aligns bars to the local clock (local midnight for day bars) and counts per level and matches. Clicking a bar or dragging across several sets `filters.timeRange` and zooms the view to it; at 1-second bars a click only filters. When the time range is cleared from elsewhere, the panel resets its view. Bars stack by level (ERROR at the bottom); axis labels are thinned by the measured chart width. `timeExtent` uses a loop, not `Math.min(...arr)`, to avoid stack overflows on large inputs; keep it that way.
+
+### Patterns
+
+The centre column switches between the table and `PatternsPanel.tsx` (App's `centerView`, the `ViewSwitch` in either header, or the command palette). Both render in the same measured wrapper with the same `tableHeight`. `lib/patterns.ts`: `templateOf` masks the first line of a message with one combined regex (`VARIABLE_RE`, alternatives in priority order as numbered groups, matched by `maskVariable`'s arguments; keep the two in step, and keep specific shapes before the bare number). Don't mask `key=value` values wholesale: Airlock's `Result=` must keep patterns apart. `groupRows` fills a `PatternGroups` a slice at a time (the panel groups up to 50k rows at once, otherwise 25k per tick with a progress meter), `rankPatterns` sorts and builds sparklines for the top patterns. Clicking a pattern puts `templateToRegex` in the search box in filter mode; that regex is looser than the mask and must stay under `buildSearchRegex`'s limits (1000 chars, no `.*.*`, `++`, `**`). Patterns are computed from `filtered`, so every other filter, including the timeline range, applies.
 
 ### Other pieces
 
@@ -79,5 +83,5 @@ When adding a filter field: add it to `FiltersState`, the initial state and the 
 
 ## Gotchas
 
-- `entry.index` is reassigned on every file add/remove, but `bookmarked` stores indices and is not remapped on add (only pruned on remove). Bookmarks can point at different rows after loading another file. Anything else keyed by `index` has the same problem.
+- `entry.index` is reassigned on every file add/remove, so never use it to remember a row. Use `entryKey(entry)` (`lib/types.ts`: file id plus `entry.line`, the 1-based line in its own file where the entry starts), as `bookmarked` does. The selected row (`selectedKey`) and find matches are keyed the same way. The table's line column shows `entry.line`.
 - The `package.json` name is still `log-slicer`; the product name is LogNinja.
