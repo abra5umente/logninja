@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { parseLog } from './parse'
+import { entryKey } from './types'
 
 describe('parseLog', () => {
   it('parses an ISO timestamp and level', () => {
@@ -32,6 +33,18 @@ describe('parseLog', () => {
     expect(entries).toHaveLength(2)
     expect(entries[0].message).toBe('Exception thrown\n    at foo (bar.js:1:1)')
     expect(entries[1].index).toBe(1)
+  })
+
+  it('records the line each entry starts on in its own file, counting blank and continuation lines', () => {
+    const entries = parseLog([
+      '2025-08-13 09:15:30 ERROR Exception thrown',
+      '    at foo (bar.js:1:1)',
+      '',
+      '2025-08-13 09:15:31 INFO Recovered',
+      'MSI (c) (1C:50) [09:15:32:491]: Doing something',
+    ].join('\n'), 'f1')
+    expect(entries.map(e => e.line)).toEqual([1, 4, 5])
+    expect(entries.map(entryKey)).toEqual(['f1:1', 'f1:4', 'f1:5'])
   })
 
   it('maps Apache status codes to levels', () => {

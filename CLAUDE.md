@@ -31,14 +31,14 @@ Unit tests use Vitest and sit next to the code they cover (e.g. `src/lib/parse.t
 
 ### Load pipeline
 
-`FileDropZone` (window-wide drag-and-drop plus Browse button) decodes each file (UTF-8 / UTF-16 BOM detection) and calls `onText(text, name)` in App. `onText`:
+App's window-wide drop handler and the hidden Browse input read each file with `decodeFile` (`lib/decode.ts`: UTF-8 / UTF-16 BOM detection, plus BOM-less UTF-16; don't go back to `file.text()`, which garbles UTF-16) and call `onText(text, name)`. `onText`:
 
-1. Generates a `fileId`, assigns a color from `FILE_COLORS`.
-2. If `isAirlockDebugFileName(name)` matches (`/airlock[\w.-]*\.log$/i`), runs `extractAirlockSummary` and opens the Airlock modal.
-3. Calls `parseLog(text, fileId, name)` from `lib/parse.ts`.
+1. Generates a `fileId` and calls `parseLog(text, fileId, name)` from `lib/parse.ts` (outside any state updater, so it runs once and the load time is real).
+2. If `isAirlockDebugFileName(name)` matches (`/airlock[\w.-]*\.log$/i`), runs `extractAirlockSummary`, remembers the file as `airlockFileId` and opens the Airlock modal.
+3. Adds the file with the first `FILE_COLORS` colour not already in use.
 4. Merges into existing entries, sorts by time (null timestamps last), and **re-indexes every entry** so `entry.index` is its position in the merged array.
 
-All of this is done with nested functional `setState` updates because several files can be dropped at once; keep it that way to avoid stale closures.
+State changes use functional `setState` updates because several files can be dropped before React re-renders; keep it that way to avoid stale closures. `removeFile` drops the file's entries and bookmarks, takes it out of `selectedFiles`, clears the Airlock summary if it came from that file, and resets every filter when the last file goes.
 
 ### Parsing (`lib/parse.ts`)
 
@@ -55,7 +55,7 @@ Search has three behaviours:
 
 `buildSearchRegex` (`lib/search.ts`) escapes plain text or compiles user regex with flags `gi`, strips PCRE `(?i)`, rejects patterns over 1000 chars or containing `.*.*`, `++`, `**`, and returns `{ re: null }` on any failure. Matching runs against `` `${timeStr} ${level} ${message}` ``, not the raw line or `source`. `RegexBuilder` + `lib/regexBuilder.ts` is the query builder: a `BuilderQuery` is `include` terms (match `any` or `all`) plus `exclude` terms, each `text` (escaped, `*` becomes `.*?`) or `regex`. `buildPattern` matches the wanted terms themselves (so they highlight) and puts the all-of / none-of checks in a lookbehind anchored at `^`: `(?:a|b)(?<=^(?=[\s\S]*?a)(?=[\s\S]*?b)(?![\s\S]*?x)[\s\S]*)`. Highlighting runs per cell, so an all-of term in another column (e.g. the level) can leave a matched row unhighlighted. `SearchBar` remembers the last built query and reopens it (or a saved query with the same regex, or one seeded from the search box by `queryFromSearch`) when "edit query" / "build query" is clicked. Saved queries live in `lib/savedQueries.ts` (localStorage key `logninja.savedQueries`, a small store with `useSavedQueries`) and appear in `PresetsDropdown`.
 
-When adding a filter field: add it to `FiltersState`, the initial state and the reset handler in App, the `filtered` memo (and `matchingIndices` if it should affect find mode), and the Markdown summary in `lib/export.ts` (`buildMarkdownSummary`, which currently only reads the deprecated `selectedLevel`).
+When adding a filter field: add it to `FiltersState`, the initial state and the reset handler in App, the `filtered` memo (and `matchingIndices` if it should affect find mode), and the Markdown summary in `lib/export.ts` (`buildMarkdownSummary`).
 
 ### Styling
 
@@ -78,5 +78,5 @@ When adding a filter field: add it to `FiltersState`, the initial state and the 
 
 ## Gotchas
 
-- `entry.index` is reassigned on every file add/remove, but `bookmarked` stores indices and is not remapped on add (only pruned on remove). Bookmarks can point at different rows after loading another file. Anything else keyed by `index` has the same problem.
+- `entry.index` is reassigned on every file add/remove, so never use it to remember a row. Use `entryKey(entry)` (`lib/types.ts`: file id plus `entry.line`, the 1-based line in its own file where the entry starts), as `bookmarked` does. `selectedIndex` is still an index, so App clears it whenever files are added or removed. The table's line column shows `entry.line`.
 - The `package.json` name is still `log-slicer`; the product name is LogNinja.

@@ -171,6 +171,7 @@ export function parseLog(text: string, fileId: string = '', fileName: string = '
   const out: LogEntry[] = []
   let lastEntry: LogEntry | null = null
   let index = 0
+  let lineNo = 0
   
   // Performance optimization: limit processing for extremely large files
   const maxLines = 1000000 // 1 million lines max
@@ -263,12 +264,15 @@ export function parseLog(text: string, fileId: string = '', fileName: string = '
   const reResqueJob = /^\*\*\* \S/
 
   const push = (time: Date | null, timeStr: string, level: LogLevel, source: string, message: string, raw: string) => {
-    const entry: LogEntry = { index: index++, time, timeStr, level, source, message, raw, fileId, fileName }
+    const entry: LogEntry = { index: index++, line: lineNo, time, timeStr, level, source, message, raw, fileId, fileName }
     out.push(entry)
     lastEntry = entry
   }
 
-  for (const rawLine of linesToProcess) {
+  for (let lineIdx = 0; lineIdx < linesToProcess.length; lineIdx++) {
+    const rawLine = linesToProcess[lineIdx]
+    // 1-based line in the file where this entry starts, so the line column matches an editor
+    lineNo = lineIdx + 1
     const line = rawLine.trimEnd()
     if (!line) continue
 
@@ -342,6 +346,7 @@ export function parseLog(text: string, fileId: string = '', fileName: string = '
         const [, source, lvlRaw, tsStr, msg] = rm
         const entry: LogEntry = {
           index: index++,
+          line: lineNo,
           time: parseDate(tsStr),
           timeStr: tsStr,
           level: (levelMap[lvlRaw.toUpperCase()] ?? 'INFO') as LogLevel,
@@ -377,6 +382,7 @@ export function parseLog(text: string, fileId: string = '', fileName: string = '
         }
         const entry: LogEntry = {
           index: index++,
+          line: lineNo,
           time: date,
           timeStr: tsStr,
           level: 'INFO',
@@ -396,6 +402,7 @@ export function parseLog(text: string, fileId: string = '', fileName: string = '
         const [, ip, tsStr, req, status, size, ref, ua] = am
         const entry: LogEntry = {
           index: index++,
+          line: lineNo,
           time: parseDate(tsStr),
           timeStr: tsStr,
           level: Number(status) >= 500 ? 'ERROR' : Number(status) >= 400 ? 'WARN' : 'INFO',
@@ -418,6 +425,7 @@ export function parseLog(text: string, fileId: string = '', fileName: string = '
         const level: LogLevel = levelFromWord || letterMap[letter as keyof typeof letterMap] || 'INFO'
         const entry: LogEntry = {
           index: index++,
+          line: lineNo,
           time: parseDate(tsStr),
           timeStr: tsStr,
           level,
@@ -436,6 +444,7 @@ export function parseLog(text: string, fileId: string = '', fileName: string = '
       if (mj) {
         const entry: LogEntry = {
           index: index++,
+          line: lineNo,
           time: parseDate(mj.tsStr),
           timeStr: mj.tsStr,
           level: mj.level,
@@ -468,6 +477,7 @@ export function parseLog(text: string, fileId: string = '', fileName: string = '
 
     const entry: LogEntry = {
       index: index++,
+      line: lineNo,
       time: ts.date,
       timeStr: ts.tsStr,
       level: levelInfo.level,
@@ -485,6 +495,7 @@ export function parseLog(text: string, fileId: string = '', fileName: string = '
   if (lines.length > maxLines) {
     out.push({
       index: index++,
+      line: maxLines + 1,
       time: null,
       timeStr: '',
       level: 'WARN',

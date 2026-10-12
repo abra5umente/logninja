@@ -1,13 +1,14 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { LogEntry, FileInfo } from '../lib/types'
+import { LogEntry, FileInfo, entryKey } from '../lib/types'
 import { levelTextClass } from '../lib/levelColors'
 
 interface Props {
   rows: LogEntry[]
   height?: number
   highlightRe?: RegExp | null
-  bookmarked?: Set<number>
-  onToggleBookmark?: (index: number) => void
+  /** Bookmarked entries, by entryKey */
+  bookmarked?: Set<string>
+  onToggleBookmark?: (key: string) => void
   selectedIndex?: number | null
   onSelectRow?: (index: number) => void
   loadedFiles?: FileInfo[]
@@ -109,6 +110,8 @@ export default function VirtualTable({ rows, height: propHeight, highlightRe = n
       const target = e.target as HTMLElement
       const isTyping = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)
       if (isTyping) return
+      // Text highlighted with the mouse gets copied as usual
+      if (window.getSelection()?.toString()) return
       if (selectedIndex == null) return
       const row = rows.find(r => r.index === selectedIndex)
       if (!row) return
@@ -204,6 +207,7 @@ export default function VirtualTable({ rows, height: propHeight, highlightRe = n
           <div style={{ transform: `translateY(${offsetY}px)`, position: 'absolute', top: 0, left: 0, width: wrapLines ? '100%' : 'max-content', minWidth: `max(100%, ${MIN_ROW_WIDTH}px)`, pointerEvents: 'auto' }}>
             {items.map((r) => {
               const fileColor = r.fileId ? fileColorMap.get(r.fileId) : undefined
+              const isBookmarked = bookmarked?.has(entryKey(r)) ?? false
               // Use items-start for wrapped lines to align top, items-center for single lines
               const itemsAlign = wrapLines ? 'items-start' : 'items-center'
               return (
@@ -225,12 +229,12 @@ export default function VirtualTable({ rows, height: propHeight, highlightRe = n
                 >
                   <div className="text-center">
                     <button
-                      className={`w-5 h-5 leading-5 text-center rounded-chip ${bookmarked?.has(r.index) ? 'text-accent' : 'text-muted/50 hover:text-fg'}`}
-                      title={bookmarked?.has(r.index) ? 'Unbookmark' : 'Bookmark'}
-                      onClick={(e) => { e.stopPropagation(); onToggleBookmark && onToggleBookmark(r.index) }}
+                      className={`w-5 h-5 leading-5 text-center rounded-chip ${isBookmarked ? 'text-accent' : 'text-muted/50 hover:text-fg'}`}
+                      title={isBookmarked ? 'Unbookmark' : 'Bookmark'}
+                      onClick={(e) => { e.stopPropagation(); onToggleBookmark && onToggleBookmark(entryKey(r)) }}
                     >★</button>
                   </div>
-                  <div className="text-center text-muted text-[11px] tabular-nums" title={`Line ${r.index + 1}`}>{r.index + 1}</div>
+                  <div className="text-center text-muted text-[11px] tabular-nums" title={r.fileName ? `${r.fileName}, line ${r.line}` : `Line ${r.line}`}>{r.line}</div>
                   <div className="tabular-nums text-muted" title={formatTime(r)}>{shouldHighlight ? renderHighlight(formatTime(r), highlightRe) : formatTime(r)}</div>
                   <div className="font-semibold">
                     <span className={levelTextClass(r.level)}>{shouldHighlight ? renderHighlight(r.level, highlightRe) : r.level}</span>
