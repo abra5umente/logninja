@@ -1,15 +1,18 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { LogEntry, FileInfo } from '../lib/types'
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { LogEntry, FileInfo, entryKey } from '../lib/types'
 import { levelTextClass } from '../lib/levelColors'
+import { formatEntryTime } from '../lib/formatTime'
 
 interface Props {
   rows: LogEntry[]
   height?: number
   highlightRe?: RegExp | null
-  bookmarked?: Set<number>
-  onToggleBookmark?: (index: number) => void
-  selectedIndex?: number | null
-  onSelectRow?: (index: number) => void
+  /** Bookmarked entries, by entryKey */
+  bookmarked?: Set<string>
+  onToggleBookmark?: (key: string) => void
+  /** Selected row, by entryKey */
+  selectedKey?: string | null
+  onSelectRow?: (key: string) => void
   loadedFiles?: FileInfo[]
   showBookmarksOnly?: boolean
   onShowBookmarksOnlyChange?: (checked: boolean) => void
@@ -19,17 +22,28 @@ interface Props {
 }
 
 const ROW_HEIGHT = 28 // px - height for single-line (no-wrap) rows
-const ROW_HEIGHT_WRAPPED = 48 // px - estimated average height for wrapped rows (~1.5-2 lines)
+const ROW_HEIGHT_WRAPPED = 48 // px - starting guess for a wrapped row, replaced by its measured height once rendered
 const OVERSCAN = 12
 const DEFAULT_HEIGHT = 600 // px - default panel height (header + rows)
 const MIN_ROW_WIDTH = 640 // px - below this the rows scroll sideways instead of squashing the message column
 
-function formatTime(entry: LogEntry): string {
-  if (entry.time) return entry.time.toISOString()
-  return entry.timeStr || ''
+// Hover text for the time cell: the log's own text and the moment in UTC
+function timeTitle(entry: LogEntry): string {
+  return entry.time ? `${entry.timeStr} (${entry.time.toISOString()} UTC)` : entry.timeStr
 }
 
-export default function VirtualTable({ rows, height: propHeight, highlightRe = null, bookmarked, onToggleBookmark, selectedIndex = null, onSelectRow, loadedFiles = [], showBookmarksOnly = false, onShowBookmarksOnlyChange, bookmarkContext = 3, onBookmarkContextChange, bookmarkCount = 0 }: Props) {
+// First position whose top edge is past y: offsets[i] is the top of row i, offsets[n] the total height
+function rowAt(offsets: Float64Array, y: number): number {
+  let lo = 0, hi = offsets.length - 1
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1
+    if (offsets[mid + 1] <= y) lo = mid + 1
+    else hi = mid
+  }
+  return lo
+}
+
+export default function VirtualTable({ rows, height: propHeight, highlightRe = null, bookmarked, onToggleBookmark, selectedKey = null, onSelectRow, loadedFiles = [], showBookmarksOnly = false, onShowBookmarksOnlyChange, bookmarkContext = 3, onBookmarkContextChange, bookmarkCount = 0 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const labelsRef = useRef<HTMLDivElement>(null)
   const [scrollTop, setScrollTop] = useState(0)
@@ -42,59 +56,135 @@ export default function VirtualTable({ rows, height: propHeight, highlightRe = n
     return map
   }, [loadedFiles])
 
-  // Container and content height - use appropriate row height based on wrap mode
-  const rowHeight = wrapLines ? ROW_HEIGHT_WRAPPED : ROW_HEIGHT
   const height = propHeight || DEFAULT_HEIGHT
-  const totalHeight = rows.length * rowHeight
 
-  // Scroll to selected row when selection changes
-  useEffect(() => {
-    if (selectedIndex === null || selectedIndex === undefined) return
+  // Wrapped rows vary in height. Each rendered row is measured with a ResizeObserver and its height
+  // stored by position; rows not seen yet use the guess. Heights reset whenever the rows change.
+  const heights = useMemo(() => new Float64Array(rows.length).fill(ROW_HEIGHT_WRAPPED), [rows])
+  const heightsRef = useRef(heights)
+  heightsRef.current = heights
+  const [measured, setMeasured] = useState(0)
+  const observerRef = useRef<ResizeObserver | null>(null)
+  const observedRef = useRef(new Set<Element>())
 
-    const container = containerRef.current
-    if (!container) return
-
-    // Find the selected row in the full dataset
-    const indexInFiltered = rows.findIndex(r => r.index === selectedIndex)
-    if (indexInFiltered < 0) return // Selected row not found
-
-    // Calculate scroll position using current row height
-    const targetScrollTop = indexInFiltered * rowHeight
-    const containerHeight = container.clientHeight
-    const currentScroll = container.scrollTop
-    const rowTop = targetScrollTop
-    const rowBottom = rowTop + rowHeight
-
-    // Only scroll if the row is not already visible
-    if (rowTop < currentScroll || rowBottom > currentScroll + containerHeight) {
-      // Center the row in the viewport
-      const centerOffset = (containerHeight / 2) - (rowHeight / 2)
-      container.scrollTop = Math.max(0, targetScrollTop - centerOffset)
+  const observeRow = useCallback((el: HTMLDivElement | null) => {
+    if (!el) return
+    if (!observerRef.current) {
+      observerRef.current = new ResizeObserver(records => {
+        const hs = heightsRef.current
+        let changed = false
+        for (const rec of records) {
+          const pos = Number((rec.target as HTMLElement).dataset.pos)
+          const h = rec.borderBoxSize?.[0]?.blockSize ?? (rec.target as HTMLElement).getBoundingClientRect().height
+          // Only a real change triggers a re-render, so measuring settles instead of looping
+          if (pos < hs.length && h > 0 && Math.abs(hs[pos] - h) > 0.5) { hs[pos] = h; changed = true }
+        }
+        if (changed) setMeasured(m => m + 1)
+      })
     }
-  }, [selectedIndex, rows.length, rowHeight])
+    if (!observedRef.current.has(el)) {
+      observerRef.current.observe(el)
+      observedRef.current.add(el)
+    }
+  }, [])
+
+  // After each render: stop watching rows that scrolled out of the window, and re-read the ones still
+  // shown, because a row React kept but moved to a new position doesn't resize, so the observer stays quiet
+  useLayoutEffect(() => {
+    const hs = heightsRef.current
+    let changed = false
+    observedRef.current.forEach(el => {
+      if (!el.isConnected) { observerRef.current?.unobserve(el); observedRef.current.delete(el); return }
+      const pos = Number((el as HTMLElement).dataset.pos)
+      const h = el.getBoundingClientRect().height
+      if (pos < hs.length && h > 0 && Math.abs(hs[pos] - h) > 0.5) { hs[pos] = h; changed = true }
+    })
+    if (changed) setMeasured(m => m + 1)
+  })
+
+  // Measuring only happens in wrap mode
+  useEffect(() => {
+    if (wrapLines) return
+    observerRef.current?.disconnect()
+    observerRef.current = null
+    observedRef.current.clear()
+  }, [wrapLines])
+
+  // Top edge of every row (wrap mode only; single-line rows are all ROW_HEIGHT)
+  const offsets = useMemo(() => {
+    if (!wrapLines) return null
+    const off = new Float64Array(heights.length + 1)
+    for (let i = 0; i < heights.length; i++) off[i + 1] = off[i] + heights[i]
+    return off
+  }, [wrapLines, heights, measured])
+
+  const rowTop = (i: number) => offsets ? offsets[i] : i * ROW_HEIGHT
+  const rowHeightAt = (i: number) => offsets ? offsets[i + 1] - offsets[i] : ROW_HEIGHT
+  const totalHeight = offsets ? offsets[rows.length] : rows.length * ROW_HEIGHT
+
+  // Scroll to the selected row when the selection changes. In wrap mode the rows around it only get
+  // their real heights once rendered, which moves it, so it is re-centred as measurements arrive until
+  // it stays put, the user scrolls, or a few tries have passed.
+  const scrollTargetRef = useRef<{ key: string; tries: number } | null>(null)
+  const expectedScrollRef = useRef<number | null>(null)
+  useEffect(() => {
+    scrollTargetRef.current = selectedKey == null ? null : { key: selectedKey, tries: 0 }
+  }, [selectedKey, rows, wrapLines])
+  useEffect(() => {
+    const target = scrollTargetRef.current
+    const container = containerRef.current
+    if (!target || !container) return
+
+    const pos = rows.findIndex(r => entryKey(r) === target.key)
+    if (pos < 0) { scrollTargetRef.current = null; return } // Selected row not shown
+
+    const top = rowTop(pos)
+    const h = rowHeightAt(pos)
+    const containerHeight = container.clientHeight
+
+    // Only scroll if the row is not already fully visible, then centre it
+    if (top < container.scrollTop || top + h > container.scrollTop + containerHeight) {
+      if (target.tries++ >= 5) { scrollTargetRef.current = null; return }
+      const next = Math.max(0, top - (containerHeight / 2) + (h / 2))
+      expectedScrollRef.current = next
+      container.scrollTop = next
+    } else if (!offsets) {
+      scrollTargetRef.current = null // Fixed-height rows don't move, so this is final
+    }
+  }, [selectedKey, rows, wrapLines, measured])
 
   useEffect(() => {
     const el = containerRef.current
     if (!el) return
-    const onScroll = () => {
+    const sync = () => {
       setScrollTop(el.scrollTop)
       if (labelsRef.current) labelsRef.current.style.transform = `translateX(${-el.scrollLeft}px)`
     }
-    onScroll()
+    const onScroll = () => {
+      // The user scrolled (not us centring the selected row), so stop following the selection
+      const expected = expectedScrollRef.current
+      if (expected === null || Math.abs(el.scrollTop - expected) > 2) scrollTargetRef.current = null
+      sync()
+    }
+    sync()
     el.addEventListener('scroll', onScroll)
     return () => el.removeEventListener('scroll', onScroll)
   }, [rows.length]) // Re-run when rows change to ensure listener is attached
 
   const { start, end } = useMemo(() => {
-    const startIndex = Math.max(0, Math.floor(scrollTop / rowHeight) - OVERSCAN)
-    const visibleCount = Math.ceil(height / rowHeight) + 2 * OVERSCAN
-    const endIndex = Math.min(rows.length - 1, startIndex + visibleCount)
-    return { start: startIndex, end: endIndex }
-  }, [scrollTop, rows.length, height, rowHeight])
+    if (offsets) {
+      const first = rowAt(offsets, scrollTop)
+      const last = rowAt(offsets, scrollTop + height)
+      return { start: Math.max(0, first - OVERSCAN), end: Math.min(rows.length - 1, last + OVERSCAN) }
+    }
+    const startIndex = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN)
+    const visibleCount = Math.ceil(height / ROW_HEIGHT) + 2 * OVERSCAN
+    return { start: startIndex, end: Math.min(rows.length - 1, startIndex + visibleCount) }
+  }, [scrollTop, rows.length, height, offsets])
 
   // Always use virtual scrolling for performance
   const items = rows.slice(start, end + 1)
-  const offsetY = start * rowHeight
+  const offsetY = rowTop(start)
   const gridCols = wrapLines ? 'grid-cols-[24px_50px_200px_90px_minmax(0,1fr)]' : 'grid-cols-[24px_50px_200px_90px_max-content]'
   const msgCellClass = wrapLines ? 'whitespace-pre-wrap break-words' : 'whitespace-nowrap'
 
@@ -109,16 +199,18 @@ export default function VirtualTable({ rows, height: propHeight, highlightRe = n
       const target = e.target as HTMLElement
       const isTyping = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)
       if (isTyping) return
-      if (selectedIndex == null) return
-      const row = rows.find(r => r.index === selectedIndex)
+      // Text highlighted with the mouse gets copied as usual
+      if (window.getSelection()?.toString()) return
+      if (selectedKey == null) return
+      const row = rows.find(r => entryKey(r) === selectedKey)
       if (!row) return
-      const text = row.raw || `${formatTime(row)} ${row.level} ${row.message}`
+      const text = row.raw || `${formatEntryTime(row)} ${row.level} ${row.message}`
       e.preventDefault()
       try { navigator.clipboard.writeText(text) } catch {}
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [rows, selectedIndex])
+  }, [rows, selectedKey])
 
   return (
     <div className="glass overflow-hidden flex flex-col" style={{ height }}>
@@ -202,36 +294,42 @@ export default function VirtualTable({ rows, height: propHeight, highlightRe = n
           {/* Absolutely positioned content window that moves with scroll */}
           {/* As wide as the longest rendered row, so row borders and highlights span the whole scroll width */}
           <div style={{ transform: `translateY(${offsetY}px)`, position: 'absolute', top: 0, left: 0, width: wrapLines ? '100%' : 'max-content', minWidth: `max(100%, ${MIN_ROW_WIDTH}px)`, pointerEvents: 'auto' }}>
-            {items.map((r) => {
+            {items.map((r, i) => {
               const fileColor = r.fileId ? fileColorMap.get(r.fileId) : undefined
+              const key = entryKey(r)
+              const isBookmarked = bookmarked?.has(key) ?? false
+              const isSelected = selectedKey === key
+              const timeText = formatEntryTime(r)
               // Use items-start for wrapped lines to align top, items-center for single lines
               const itemsAlign = wrapLines ? 'items-start' : 'items-center'
               return (
                 <div
-                  key={r.index}
-                  className={`grid ${gridCols} text-[12px] px-3 ${itemsAlign} border-b border-line cursor-default ${selectedIndex === r.index ? 'bg-accent/15' : 'hover:bg-fg/5'}`}
+                  key={key}
+                  ref={wrapLines ? observeRow : undefined}
+                  data-pos={start + i}
+                  className={`grid ${gridCols} text-[12px] px-3 ${itemsAlign} border-b border-line cursor-default ${isSelected ? 'bg-accent/15' : 'hover:bg-fg/5'}`}
                   style={{
-                    minHeight: wrapLines ? 28 : rowHeight,
-                    height: wrapLines ? 'auto' : rowHeight,
+                    minHeight: ROW_HEIGHT,
+                    height: wrapLines ? 'auto' : ROW_HEIGHT,
                     borderLeft: fileColor ? `3px solid ${fileColor}` : undefined,
                     paddingLeft: fileColor ? '10px' : undefined,
                     paddingTop: wrapLines ? '6px' : undefined,
                     paddingBottom: wrapLines ? '6px' : undefined
                   }}
                   title={r.fileName ? `${r.fileName}: ${r.message}` : r.message}
-                  onClick={() => onSelectRow && onSelectRow(r.index)}
+                  onClick={() => onSelectRow && onSelectRow(key)}
                   role="row"
-                  aria-selected={selectedIndex === r.index}
+                  aria-selected={isSelected}
                 >
                   <div className="text-center">
                     <button
-                      className={`w-5 h-5 leading-5 text-center rounded-chip ${bookmarked?.has(r.index) ? 'text-accent' : 'text-muted/50 hover:text-fg'}`}
-                      title={bookmarked?.has(r.index) ? 'Unbookmark' : 'Bookmark'}
-                      onClick={(e) => { e.stopPropagation(); onToggleBookmark && onToggleBookmark(r.index) }}
+                      className={`w-5 h-5 leading-5 text-center rounded-chip ${isBookmarked ? 'text-accent' : 'text-muted/50 hover:text-fg'}`}
+                      title={isBookmarked ? 'Unbookmark' : 'Bookmark'}
+                      onClick={(e) => { e.stopPropagation(); onToggleBookmark && onToggleBookmark(key) }}
                     >★</button>
                   </div>
-                  <div className="text-center text-muted text-[11px] tabular-nums" title={`Line ${r.index + 1}`}>{r.index + 1}</div>
-                  <div className="tabular-nums text-muted" title={formatTime(r)}>{shouldHighlight ? renderHighlight(formatTime(r), highlightRe) : formatTime(r)}</div>
+                  <div className="text-center text-muted text-[11px] tabular-nums" title={r.fileName ? `${r.fileName}, line ${r.line}` : `Line ${r.line}`}>{r.line}</div>
+                  <div className="tabular-nums text-muted" title={timeTitle(r)}>{shouldHighlight ? renderHighlight(timeText, highlightRe) : timeText}</div>
                   <div className="font-semibold">
                     <span className={levelTextClass(r.level)}>{shouldHighlight ? renderHighlight(r.level, highlightRe) : r.level}</span>
                   </div>
