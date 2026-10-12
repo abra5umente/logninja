@@ -67,7 +67,7 @@ Log Summary view:
 <img width="1723" height="895" alt="Untitled" src="https://github.com/user-attachments/assets/d29c693d-6035-4fbd-a5f9-b3d6ca9bbb4f" />  
 Markdown Summary export view:
 <img width="1722" height="892" alt="Untitled" src="https://github.com/user-attachments/assets/ea9e6e09-a7a4-4ef9-9080-07ba479a41dc" />  
-Settings with light/dark mode themes and accent colour picker:
+Settings with system / light / dark modes and five colour palettes:
 <img width="1723" height="896" alt="Untitled" src="https://github.com/user-attachments/assets/57ec2c79-c6da-499e-b930-806a8770eaba" />  
 Highlight search mode:
 <img width="1723" height="899" alt="Untitled" src="https://github.com/user-attachments/assets/4b4c73d2-a22a-4311-94e7-e64f9f58b847" />  

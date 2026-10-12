@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react'
 import { LogEntry, ChunkBin } from '../lib/types'
 import { groupByBinsMs } from '../lib/time'
+import { levelColorVar } from '../lib/levelColors'
 
 interface Props {
   entries: LogEntry[]
@@ -166,34 +167,40 @@ export default function TimelinePanel({ entries, binMs, setBinMs, onSelectRange,
   }
 
   return (
-    <div className="w-full border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-md flex-shrink-0" style={{ minHeight: '120px' }}>
-      <div className="bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-100 px-3 py-3 text-xs">
-        <div className="flex items-center justify-between mb-2">
-          <div className="text-sm font-semibold">Timeline</div>
+    <div className="glass w-full flex-shrink-0" style={{ minHeight: '120px' }}>
+      <div className="px-3 pt-3">
+        <div className="group-h !mb-2">
+          <b>timeline</b>
+          <span className="rule" />
           {activeRange && (
-            <button className="text-xs text-[var(--accent)] hover:underline whitespace-nowrap flex-shrink-0" onClick={handleClearFilter}>Clear Filter</button>
+            <button className="link whitespace-nowrap flex-shrink-0" onClick={handleClearFilter}>clear filter</button>
           )}
         </div>
 
         {/* Breadcrumb Navigation */}
-        <div className="flex items-center gap-2">
-          <div className="text-[11px] text-gray-600 dark:text-gray-400">
-            Viewing: <span className="font-semibold text-gray-800 dark:text-gray-200">{LEVEL_CONFIG[currentLevel].label}</span>
-            {bins.length > 0 && <span className="ml-1">({bins.length} {currentLevel === 'day' ? 'days' : currentLevel === 'hour' ? 'hours' : 'bins'})</span>}
+        <div className="flex items-center gap-2 text-[11px] text-muted">
+          <div>
+            viewing <span className="font-semibold text-fg">{LEVEL_CONFIG[currentLevel].label.toLowerCase()}</span>
+            {bins.length > 0 && <span className="ml-1 tabular-nums">({bins.length} {currentLevel === 'day' ? 'days' : currentLevel === 'hour' ? 'hours' : 'bins'})</span>}
           </div>
           {drillState.parentRange && (
             <button
-              className="text-[10px] px-2 py-0.5 bg-gray-200 dark:bg-gray-600 hover:bg-gray-300 dark:hover:bg-gray-500 rounded"
+              className="btn !text-[11px] !py-0.5 !px-2"
               onClick={handleDrillUp}
             >
-              ← Back to {drillHistory.length > 0 ? LEVEL_CONFIG[drillHistory[drillHistory.length - 1].level].plural : 'All'}
+              ← back to {drillHistory.length > 0 ? LEVEL_CONFIG[drillHistory[drillHistory.length - 1].level].plural.toLowerCase() : 'all'}
             </button>
           )}
         </div>
       </div>
 
       {bins.length === 0 ? (
-        <div className="p-2 text-center text-xs text-gray-500 dark:text-gray-400">No timestamped entries.</div>
+        <div className="p-3">
+          <div className="empty text-xs">
+            <span className="kao">(￣～￣;)</span>
+            no timestamped entries
+          </div>
+        </div>
       ) : (
         <>
           {/* Horizontal Histogram */}
@@ -208,11 +215,12 @@ export default function TimelinePanel({ entries, binMs, setBinMs, onSelectRange,
           </div>
 
           {/* Filter Details - Always reserve space to prevent layout shift */}
-          <div className="px-3 pb-2 border-t border-gray-200 dark:border-gray-700 pt-2" style={{ minHeight: '50px' }}>
+          <div className="px-3 pb-2 border-t border-line pt-2" style={{ minHeight: '50px' }}>
             {filterStats && (
               <>
-                <div className="text-xs font-semibold text-gray-700 dark:text-gray-200 mb-1">
-                  Filtered: {filterStats.totalCount.toLocaleString()} {filterStats.totalCount === 1 ? 'entry' : 'entries'}
+                <div className="text-xs mb-1">
+                  <span className="lbl mr-2">filtered</span>
+                  <span className="font-semibold tabular-nums">{filterStats.totalCount.toLocaleString()}</span> {filterStats.totalCount === 1 ? 'entry' : 'entries'}
                 </div>
                 <LevelBadgesFromCounts levelCounts={filterStats.levelCounts} />
               </>
@@ -244,27 +252,25 @@ function HorizontalHistogram({ bins, max, onSelect, selectedIndex, currentLevel 
           return (
             <div
               key={i}
-              className="flex-1 flex flex-col items-stretch min-w-[40px] border border-gray-300 dark:border-gray-600 rounded bg-gray-100 dark:bg-gray-700 p-1"
+              className={`flex-1 flex flex-col items-stretch justify-end min-w-[40px] rounded-inner p-1 border ${isSelected ? 'border-accent bg-accent/10' : 'border-transparent bg-bg/45'}`}
             >
               {/* Clickable bar with count inside */}
               <button
                 onClick={() => onSelect(b, i)}
-                className="w-full rounded transition-all relative flex items-center justify-center font-semibold text-white text-[10px]"
+                className={`w-full rounded-chip transition-colors relative flex items-center justify-center font-semibold text-[10px] tabular-nums ${
+                  isSelected ? 'bg-accent text-bg' : 'bg-accent/35 text-fg hover:bg-accent/60'
+                }`}
                 style={{
                   height: `${height}px`,
-                  minHeight: '24px',
-                  backgroundColor: isSelected ? 'var(--accent)' : 'var(--accent)',
-                  opacity: isSelected ? 0.9 : 0.5
+                  minHeight: '24px'
                 }}
-                onMouseEnter={(e) => e.currentTarget.style.opacity = '0.75'}
-                onMouseLeave={(e) => e.currentTarget.style.opacity = isSelected ? '0.9' : '0.5'}
                 title={`${formatBinTime(b, currentLevel)} • ${b.count} entries\n${tooltipAction}`}
               >
                 {b.count}
               </button>
 
               {/* Horizontal date/time label */}
-              <div className="text-[9px] text-gray-700 dark:text-gray-300 text-center mt-1 font-medium whitespace-nowrap">
+              <div className={`text-[9px] text-center mt-1 whitespace-nowrap tabular-nums ${isSelected ? 'text-fg font-semibold' : 'text-muted'}`}>
                 {formatBinTime(b, currentLevel)}
               </div>
             </div>
@@ -275,39 +281,16 @@ function HorizontalHistogram({ bins, max, onSelect, selectedIndex, currentLevel 
   )
 }
 
-function LevelBadges({ bin }: { bin: ChunkBin }) {
-  const entries = Object.entries(bin.levelCounts).filter(([_, v]) => (v ?? 0) > 0) as [string, number][]
-  if (entries.length === 0) return <div className="text-[11px] text-gray-500 dark:text-gray-400">No data</div>
-  const color = (lvl: string) => ({
-    ERROR: 'bg-red-100 text-red-700',
-    WARN: 'bg-amber-100 text-amber-700',
-    INFO: 'bg-blue-100 text-blue-700',
-    DEBUG: 'bg-gray-100 text-gray-700',
-    TRACE: 'bg-slate-100 text-slate-700',
-  } as Record<string, string>)[lvl] || 'bg-gray-100 text-gray-700'
-  return (
-    <div className="flex flex-wrap gap-1">
-      {entries.map(([lvl, count]) => (
-        <span key={lvl} className={`text-[11px] px-1.5 py-0.5 rounded ${color(lvl)}`}>{lvl} {count}</span>
-      ))}
-    </div>
-  )
-}
-
 function LevelBadgesFromCounts({ levelCounts }: { levelCounts: Record<string, number> }) {
   const entries = Object.entries(levelCounts).filter(([_, v]) => (v ?? 0) > 0) as [string, number][]
-  if (entries.length === 0) return <div className="text-[11px] text-gray-500 dark:text-gray-400">No data</div>
-  const color = (lvl: string) => ({
-    ERROR: 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-100',
-    WARN: 'bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-100',
-    INFO: 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-100',
-    DEBUG: 'bg-gray-100 text-gray-700 dark:bg-gray-600 dark:text-gray-100',
-    TRACE: 'bg-slate-100 text-slate-700 dark:bg-slate-600 dark:text-slate-100',
-  } as Record<string, string>)[lvl] || 'bg-gray-100 text-gray-700 dark:bg-gray-600 dark:text-gray-100'
+  if (entries.length === 0) return <div className="text-[11px] text-muted">no data</div>
   return (
     <div className="flex flex-wrap gap-1">
       {entries.map(([lvl, count]) => (
-        <span key={lvl} className={`text-[11px] px-1.5 py-0.5 rounded ${color(lvl)}`}>{lvl} {count.toLocaleString()}</span>
+        <span key={lvl} className="inline-flex items-center gap-1.5 text-[11px] px-1.5 py-0.5 rounded-chip border border-line bg-bg/45">
+          <span className="w-1.5 h-1.5 rounded-full" style={{ background: levelColorVar(lvl) }} />
+          {lvl} <span className="tabular-nums text-muted">{count.toLocaleString()}</span>
+        </span>
       ))}
     </div>
   )

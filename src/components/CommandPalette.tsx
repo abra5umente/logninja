@@ -40,9 +40,9 @@ export default function CommandPalette({ open, onClose, items }: {
   if (!open) return null
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center pt-24 bg-black/40" onClick={onClose}>
-      <div className="w-[min(90vw,680px)] bg-white dark:bg-gray-800 dark:text-gray-100 rounded-md shadow-xl" onClick={e => e.stopPropagation()}>
-        <div className="border-b border-gray-200 dark:border-gray-700 p-2">
+    <div className="fixed inset-0 z-50 flex items-start justify-center pt-24 px-4 scrim" onClick={onClose}>
+      <div className="popup w-[min(90vw,680px)] overflow-hidden" onClick={e => e.stopPropagation()}>
+        <div className="border-b border-line p-2">
           <input
             ref={inputRef}
             value={query}
@@ -54,8 +54,8 @@ export default function CommandPalette({ open, onClose, items }: {
                 enablePizzaTheme()
               }
             }}
-            placeholder="Type a command…"
-            className="w-full px-3 py-2 text-sm bg-transparent outline-none focus:outline-none focus:ring-2 focus:ring-[var(--accent)] rounded"
+            placeholder="type a command…"
+            className="in"
           />
         </div>
         <div className="max-h-80 overflow-auto">
@@ -63,13 +63,18 @@ export default function CommandPalette({ open, onClose, items }: {
             <button
               key={i.id}
               onClick={() => { i.run(); onClose() }}
-              className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-700"
+              className="w-full text-left px-3 py-2 hover:bg-accent/10 hover:text-accent focus:bg-accent/10 outline-none"
             >
               {i.label}
             </button>
           ))}
           {filtered.length === 0 && (
-            <div className="px-3 py-3 text-sm text-gray-500">No matches</div>
+            <div className="p-2">
+              <div className="empty">
+                <span className="kao">(・・ ) ?</span>
+                no matching commands
+              </div>
+            </div>
           )}
         </div>
       </div>

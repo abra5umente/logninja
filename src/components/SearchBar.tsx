@@ -34,15 +34,15 @@ const SearchBar = forwardRef<HTMLInputElement, Props>(function SearchBar({
           type="text"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder={useRegex ? 'Regex search (e.g. error|warn)' : 'Search…'}
+          placeholder={useRegex ? 'regex, e.g. error|warn' : 'search…'}
           ref={ref}
-          className="w-full px-2 py-1.5 pr-8 text-sm border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-gray-100"
+          className="in pr-8"
         />
         {query && (
           <button
             type="button"
             onClick={() => setQuery('')}
-            className="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 rounded"
+            className="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 text-muted hover:text-fg rounded-chip"
             aria-label="Clear search"
             title="Clear search"
           >
@@ -54,28 +54,24 @@ const SearchBar = forwardRef<HTMLInputElement, Props>(function SearchBar({
       </div>
 
       {/* Search Mode Toggle */}
-      <div className="flex gap-1">
+      <div className="seg full" role="radiogroup" aria-label="Search mode">
         <button
           onClick={() => setSearchMode('find')}
-          className={`flex-1 px-2 py-1 text-xs rounded transition-colors ${
-            searchMode === 'find'
-              ? 'bg-[var(--accent)] text-white'
-              : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'
-          }`}
+          className={searchMode === 'find' ? 'on' : ''}
+          role="radio"
+          aria-checked={searchMode === 'find'}
           title="Jump to matches (like VS Code)"
         >
-          Find
+          find
         </button>
         <button
           onClick={() => setSearchMode('filter')}
-          className={`flex-1 px-2 py-1 text-xs rounded transition-colors ${
-            searchMode === 'filter'
-              ? 'bg-[var(--accent)] text-white'
-              : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'
-          }`}
+          className={searchMode === 'filter' ? 'on' : ''}
+          role="radio"
+          aria-checked={searchMode === 'filter'}
           title="Show only matching entries"
         >
-          Filter
+          filter
         </button>
       </div>
 
@@ -85,18 +81,18 @@ const SearchBar = forwardRef<HTMLInputElement, Props>(function SearchBar({
           <button
             onClick={onPrevMatch}
             disabled={totalMatches === 0}
-            className="px-2 py-1 text-xs bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-300 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="btn !px-2.5"
             title="Previous match (Shift+Enter)"
           >
             ↑
           </button>
-          <div className="flex-1 text-center text-xs text-gray-600 dark:text-gray-400">
-            {totalMatches === 0 ? 'No matches' : `${(currentMatchIndex ?? 0) + 1} of ${totalMatches}`}
+          <div className={`flex-1 text-center text-xs tabular-nums ${totalMatches === 0 ? 'text-muted' : ''}`}>
+            {totalMatches === 0 ? 'no matches' : `${(currentMatchIndex ?? 0) + 1} of ${totalMatches}`}
           </div>
           <button
             onClick={onNextMatch}
             disabled={totalMatches === 0}
-            className="px-2 py-1 text-xs bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-300 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="btn !px-2.5"
             title="Next match (Enter)"
           >
             ↓
@@ -105,35 +101,35 @@ const SearchBar = forwardRef<HTMLInputElement, Props>(function SearchBar({
       )}
 
       <div className="flex flex-col gap-1.5">
-        <label className="inline-flex items-center gap-2 text-xs text-gray-700 dark:text-gray-300 select-none">
+        <label className="inline-flex items-center gap-2 text-xs select-none cursor-pointer">
           <input
             type="checkbox"
             checked={useRegex}
             onChange={(e) => setUseRegex(e.target.checked)}
           />
-          Regex
+          regex
         </label>
-        <label className="inline-flex items-center gap-2 text-xs text-gray-700 dark:text-gray-300 select-none">
+        <label className="inline-flex items-center gap-2 text-xs select-none cursor-pointer">
           <input
             type="checkbox"
             checked={highlightOnly}
             onChange={(e) => setHighlightOnly(e.target.checked)}
           />
-          Highlight only
+          highlight only
         </label>
       </div>
 
       {/* Regex Builder Button */}
       <button
         onClick={() => setShowRegexBuilder(true)}
-        className="w-full px-3 py-2 text-xs bg-[var(--accent)] text-white rounded hover:opacity-90 transition-opacity flex items-center justify-center gap-2"
+        className="btn w-full flex items-center justify-center gap-2"
         title="Visual regex pattern builder"
       >
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5 text-accent">
           <path d="M5.433 13.917l1.262-3.155A4 4 0 017.58 9.42l6.92-6.918a2.121 2.121 0 013 3l-6.92 6.918c-.383.383-.84.685-1.343.886l-3.154 1.262a.5.5 0 01-.65-.65z" />
           <path d="M3.5 5.75c0-.69.56-1.25 1.25-1.25H10A.75.75 0 0010 3H4.75A2.75 2.75 0 002 5.75v9.5A2.75 2.75 0 004.75 18h9.5A2.75 2.75 0 0017 15.25V10a.75.75 0 00-1.5 0v5.25c0 .69-.56 1.25-1.25 1.25h-9.5c-.69 0-1.25-.56-1.25-1.25v-9.5z" />
         </svg>
-        Build Query
+        build query
       </button>
 
       {/* Regex Builder Modal */}
