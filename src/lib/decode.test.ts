@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { decodeBytes } from './decode'
+import { decodeBytes, looksLikeText } from './decode'
 
 const utf16le = (s: string) => {
   const out = new Uint8Array(s.length * 2)
@@ -32,5 +32,25 @@ describe('decodeBytes', () => {
 
   it('spots UTF-16LE without a byte order mark', () => {
     expect(decodeBytes(utf16le(line))).toBe(line)
+  })
+})
+
+describe('looksLikeText', () => {
+  const check = (bytes: Uint8Array) => looksLikeText(bytes, decodeBytes(bytes))
+
+  it('accepts log text, UTF-8 or UTF-16', () => {
+    expect(check(new TextEncoder().encode('2026-01-05 10:00:00 INFO started\n\tat thing'))).toBe(true)
+    expect(check(new Uint8Array([0xFF, 0xFE, ...utf16le('2026-01-05 10:00:00 INFO started')]))).toBe(true)
+    expect(check(new Uint8Array())).toBe(true)
+  })
+
+  it('rejects a gzip file', () => {
+    expect(check(new Uint8Array([0x1F, 0x8B, 0x08, 0x00, 0x41, 0x42, 0x43]))).toBe(false)
+  })
+
+  it('rejects other binary data', () => {
+    const bytes = new Uint8Array(512)
+    for (let i = 0; i < bytes.length; i++) bytes[i] = (i * 37 + 11) % 256
+    expect(check(bytes)).toBe(false)
   })
 })

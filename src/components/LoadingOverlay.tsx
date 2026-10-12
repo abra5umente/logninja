@@ -14,17 +14,23 @@ export default function LoadingOverlay({ stage, fileCount, onComplete }: Props) 
     if (stage === 'loading') {
       setIsVisible(true)
       setShowCheckmark(false)
-    } else if (stage === 'complete') {
-      // Show checkmark, hide spinner
-      setShowCheckmark(true)
-      // Wait a bit then start fade out
-      const timer = setTimeout(() => {
-        setIsVisible(false)
-        // After fade out completes, notify parent
-        setTimeout(onComplete, 500)
-      }, 600)
-      return () => clearTimeout(timer)
+      return
     }
+    if (stage === 'complete') {
+      // Show checkmark, then fade out and tell the parent. Both timers are cleared if another load
+      // starts meanwhile, or a stale one would end the new load and leave the overlay stuck on screen.
+      setShowCheckmark(true)
+      let doneTimer: ReturnType<typeof setTimeout> | undefined
+      const fadeTimer = setTimeout(() => {
+        setIsVisible(false)
+        doneTimer = setTimeout(onComplete, 500)
+      }, 600)
+      return () => {
+        clearTimeout(fadeTimer)
+        clearTimeout(doneTimer)
+      }
+    }
+    setIsVisible(false)
   }, [stage, onComplete])
 
   if (stage === 'idle' && !isVisible) return null

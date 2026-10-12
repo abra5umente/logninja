@@ -4,7 +4,8 @@ import LevelFilters from './components/LevelFilters'
 import VirtualTable from './components/VirtualTable'
 import { parseLog } from './lib/parse'
 import { FiltersState, LogEntry, LogLevel, FileInfo, entryKey } from './lib/types'
-import { decodeFile } from './lib/decode'
+import { readLogFile } from './lib/decode'
+import { passesBaseFilters, withBookmarkContext } from './lib/filter'
 import TimelinePanel from './components/TimelinePanel'
 import PresetsDropdown from './components/PresetsDropdown'
 import { buildSearchRegex } from './lib/search'
@@ -16,6 +17,7 @@ import { AIRLOCK_FIELDS, extractAirlockSummary, isAirlockDebugFileName } from '.
 import AirlockSummary from './components/AirlockSummary'
 import LogSummary from './components/LogSummary'
 import LoadBanner from './components/LoadBanner'
+import SkippedNotice from './components/SkippedNotice'
 import SettingsSidebar from './components/SettingsSidebar'
 import LoadingOverlay from './components/LoadingOverlay'
 import GroupHeading from './components/GroupHeading'
@@ -65,11 +67,14 @@ export default function App() {
   const [showLoadBanner, setShowLoadBanner] = useState(false)
   const bookmarkedRows = useMemo(() => entries.filter(e => bookmarked.has(entryKey(e))), [entries, bookmarked])
   const toggleBookmark = (key: string) => setBookmarked(prev => { const n = new Set(prev); if (n.has(key)) n.delete(key); else n.add(key); return n })
-  const [selectedIndex, setSelectedIndex] = useState<number | null>(null)
+  // The selected row, by entryKey so it stays put when files come and go
+  const [selectedKey, setSelectedKey] = useState<string | null>(null)
   const [isDraggingGlobal, setIsDraggingGlobal] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [loadingStage, setLoadingStage] = useState<'idle' | 'loading' | 'complete'>('idle')
   const [loadingFileCount, setLoadingFileCount] = useState(0)
+  // Files the last load skipped because they weren't text
+  const [skippedFiles, setSkippedFiles] = useState<string[]>([])
 
   // Refs and state for dynamic height calculation
   const tableWrapRef = useRef<HTMLDivElement>(null)
@@ -151,11 +156,29 @@ export default function App() {
       return mergedEntries.map((entry, idx) => ({ ...entry, index: idx }))
     })
 
-    // The selection is an index, which now points somewhere else
-    setSelectedIndex(null)
-
     setLoadTime(performance.now() - startTime)
     setShowLoadBanner(true)
+  }
+
+  // Read dropped or browsed files. Any name is accepted (server.log.1, syslog), but archives and other
+  // binary files are skipped with a note rather than shown as garbage.
+  const loadFiles = async (files: File[]) => {
+    if (files.length === 0) return
+    setLoadingStage('loading')
+    setLoadingFileCount(files.length)
+    const skipped: string[] = []
+    for (const file of files) {
+      try {
+        const text = await readLogFile(file)
+        if (text === null) skipped.push(file.name)
+        else onText(text, file.name)
+      } catch (err) {
+        console.error(`Failed to read ${file.name}:`, err)
+        skipped.push(file.name)
+      }
+    }
+    setSkippedFiles(skipped)
+    setLoadingStage('complete')
   }
 
   const removeFile = (fileId: string) => {
@@ -182,8 +205,6 @@ export default function App() {
       setAirlockFileId(null)
       setAirlockModalOpen(false)
     }
-
-    setSelectedIndex(null)
   }
 
   const handleFileClick = (fileId: string, isCtrlClick: boolean) => {
@@ -217,149 +238,60 @@ export default function App() {
   const { re: compiledRe } = useMemo(() => buildSearchRegex(filters.query, filters.useRegex), [filters.query, filters.useRegex])
   const highlightRe = compiledRe
 
+  // Search test against `time level message`, built once rather than per row
+  const matchesQuery = useMemo(() => {
+    const q = filters.query.trim()
+    if (!q) return null
+    if (highlightRe) {
+      const testRe = new RegExp(highlightRe.source, highlightRe.flags.replace('g', ''))
+      return (e: LogEntry) => testRe.test(`${e.timeStr} ${e.level} ${e.message}`)
+    }
+    const needle = q.toLowerCase()
+    return (e: LogEntry) => `${e.timeStr} ${e.level} ${e.message}`.toLowerCase().includes(needle)
+  }, [filters.query, highlightRe])
+
+  // Rows that pass the file, level and time filters
+  const baseFiltered = useMemo(
+    () => entries.filter(e => passesBaseFilters(e, filters)),
+    [entries, filters.selectedFiles, filters.selectedLevels, filters.selectedLevel, filters.timeRange]
+  )
+
   const filtered = useMemo(() => {
-    // Bookmark-only mode: show bookmarks with context
-    if (filters.showBookmarksOnly) {
-      if (bookmarked.size === 0) return []
+    // Bookmark-only mode: bookmarks with context, within the other filters
+    if (filters.showBookmarksOnly) return withBookmarkContext(baseFiltered, bookmarked, filters.bookmarkContext)
+    // Find mode and highlight-only show every row and only mark the matches
+    if (filters.searchMode === 'find' || filters.highlightOnly || !matchesQuery) return baseFiltered
+    return baseFiltered.filter(matchesQuery)
+  }, [baseFiltered, bookmarked, filters.showBookmarksOnly, filters.bookmarkContext, filters.searchMode, filters.highlightOnly, matchesQuery])
 
-      const positionsToInclude = new Set<number>()
-
-      // For each bookmarked entry, add it and context lines
-      entries.forEach((e, pos) => {
-        if (!bookmarked.has(entryKey(e))) return
-        const contextStart = Math.max(0, pos - filters.bookmarkContext)
-        const contextEnd = Math.min(entries.length - 1, pos + filters.bookmarkContext)
-        for (let i = contextStart; i <= contextEnd; i++) positionsToInclude.add(i)
-      })
-
-      // Filter to only included positions (maintains chronological order)
-      return entries.filter((_, pos) => positionsToInclude.has(pos))
-    }
-
-    const re = highlightRe
-    let q = filters.query.trim()
-    if (q && !filters.useRegex) q = q.toLowerCase()
-
-    // If find mode or highlightOnly is enabled, don't filter by search query
-    if (filters.searchMode === 'find' || filters.highlightOnly) {
-      return entries.filter(e => {
-        // File filter
-        if (filters.selectedFiles && filters.selectedFiles.length > 0 && e.fileId) {
-          if (!filters.selectedFiles.includes(e.fileId)) return false
-        }
-        // Level filter (use new selectedLevels or fall back to deprecated selectedLevel)
-        if (filters.selectedLevels && filters.selectedLevels.length > 0) {
-          if (!filters.selectedLevels.includes(e.level)) return false
-        } else if (filters.selectedLevel && e.level !== filters.selectedLevel) {
-          return false
-        }
-        if (filters.timeRange && e.time) {
-          const t = e.time.getTime()
-          if (t < filters.timeRange.start.getTime() || t >= filters.timeRange.end.getTime()) return false
-        } else if (filters.timeRange && !e.time) {
-          // exclude entries without timestamp when a time filter is active
-          return false
-        }
-        return true
-      })
-    }
-
-    // Normal filtering mode
-    return entries.filter(e => {
-      // File filter
-      if (filters.selectedFiles && filters.selectedFiles.length > 0 && e.fileId) {
-        if (!filters.selectedFiles.includes(e.fileId)) return false
-      }
-      // Level filter (use new selectedLevels or fall back to deprecated selectedLevel)
-      if (filters.selectedLevels && filters.selectedLevels.length > 0) {
-        if (!filters.selectedLevels.includes(e.level)) return false
-      } else if (filters.selectedLevel && e.level !== filters.selectedLevel) {
-        return false
-      }
-      if (filters.timeRange && e.time) {
-        const t = e.time.getTime()
-        if (t < filters.timeRange.start.getTime() || t >= filters.timeRange.end.getTime()) return false
-      } else if (filters.timeRange && !e.time) {
-        // exclude entries without timestamp when a time filter is active
-        return false
-      }
-      if (!q) return true
-      const hay = `${e.timeStr} ${e.level} ${e.message}`
-      if (re) {
-        const flags = re.flags.replace('g', '')
-        const testRe = new RegExp(re.source, flags)
-        return testRe.test(hay)
-      }
-      return hay.toLowerCase().includes(q)
-    })
-  }, [entries, filters, highlightRe, bookmarked])
-
-  // Find mode: Calculate matching entry indices
-  const matchingIndices = useMemo(() => {
-    if (filters.searchMode !== 'find' || !filters.query.trim()) return []
-
-    const re = highlightRe
-    let q = filters.query.trim()
-    if (q && !filters.useRegex) q = q.toLowerCase()
-
-    // Filter by file/level/time first, then find matches
-    const baseFiltered = entries.filter(e => {
-      // File filter
-      if (filters.selectedFiles && filters.selectedFiles.length > 0 && e.fileId) {
-        if (!filters.selectedFiles.includes(e.fileId)) return false
-      }
-      // Level filter
-      if (filters.selectedLevels && filters.selectedLevels.length > 0) {
-        if (!filters.selectedLevels.includes(e.level)) return false
-      } else if (filters.selectedLevel && e.level !== filters.selectedLevel) {
-        return false
-      }
-      // Time filter
-      if (filters.timeRange && e.time) {
-        const t = e.time.getTime()
-        if (t < filters.timeRange.start.getTime() || t >= filters.timeRange.end.getTime()) return false
-      } else if (filters.timeRange && !e.time) {
-        return false
-      }
-      return true
-    })
-
-    // Find entries that match the search query
-    return baseFiltered
-      .filter(e => {
-        const hay = `${e.timeStr} ${e.level} ${e.message}`
-        if (re) {
-          const flags = re.flags.replace('g', '')
-          const testRe = new RegExp(re.source, flags)
-          return testRe.test(hay)
-        }
-        return hay.toLowerCase().includes(q)
-      })
-      .map(e => e.index)
-  }, [entries, filters.query, filters.useRegex, filters.searchMode, filters.selectedFiles, filters.selectedLevels, filters.selectedLevel, filters.timeRange, highlightRe])
+  // Find mode: the rows that match the search, by entryKey
+  const matchingKeys = useMemo(() => {
+    if (filters.searchMode !== 'find' || !matchesQuery) return []
+    return baseFiltered.filter(matchesQuery).map(entryKey)
+  }, [baseFiltered, filters.searchMode, matchesQuery])
 
   // Navigate to next/previous match
   const goToNextMatch = () => {
-    if (matchingIndices.length === 0) return
-    const nextIndex = (filters.currentMatchIndex + 1) % matchingIndices.length
+    if (matchingKeys.length === 0) return
+    const nextIndex = (filters.currentMatchIndex + 1) % matchingKeys.length
     setFilters(f => ({ ...f, currentMatchIndex: nextIndex }))
-    setSelectedIndex(matchingIndices[nextIndex])
+    setSelectedKey(matchingKeys[nextIndex])
   }
 
   const goToPreviousMatch = () => {
-    if (matchingIndices.length === 0) return
-    const prevIndex = (filters.currentMatchIndex - 1 + matchingIndices.length) % matchingIndices.length
+    if (matchingKeys.length === 0) return
+    const prevIndex = (filters.currentMatchIndex - 1 + matchingKeys.length) % matchingKeys.length
     setFilters(f => ({ ...f, currentMatchIndex: prevIndex }))
-    setSelectedIndex(matchingIndices[prevIndex])
+    setSelectedKey(matchingKeys[prevIndex])
   }
 
   // Auto-jump to first match when query changes in find mode
   useEffect(() => {
-    if (filters.searchMode === 'find' && filters.query && matchingIndices.length > 0) {
+    if (filters.searchMode === 'find' && filters.query && matchingKeys.length > 0) {
       setFilters(f => ({ ...f, currentMatchIndex: 0 }))
-      setSelectedIndex(matchingIndices[0])
+      setSelectedKey(matchingKeys[0])
     }
-  }, [filters.query, filters.searchMode, matchingIndices.length])
+  }, [filters.query, filters.searchMode, matchingKeys.length])
 
   // Removed sample log loader
 
@@ -393,7 +325,7 @@ export default function App() {
       // Find mode navigation: Enter = next, Shift+Enter = previous. Only from the search box or with nothing
       // focused, so Enter still works in dialogs and on buttons.
       const fromSearchOrPage = target === searchInputRef.current || target === document.body
-      if (filters.searchMode === 'find' && filters.query && matchingIndices.length > 0 && e.key === 'Enter' && fromSearchOrPage) {
+      if (filters.searchMode === 'find' && filters.query && matchingKeys.length > 0 && e.key === 'Enter' && fromSearchOrPage) {
         e.preventDefault()
         if (e.shiftKey) {
           goToPreviousMatch()
@@ -416,7 +348,7 @@ export default function App() {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [filters.searchMode, filters.query, matchingIndices.length, goToNextMatch, goToPreviousMatch])
+  }, [filters.searchMode, filters.query, matchingKeys.length, goToNextMatch, goToPreviousMatch])
   
   useEffect(() => watchSystemScheme(() => setSystemLight(systemPrefersLight())), [])
 
@@ -436,6 +368,7 @@ export default function App() {
   // Stable, so the banner's and overlay's timers aren't restarted by every re-render
   const closeLoadBanner = useCallback(() => setShowLoadBanner(false), [])
   const finishLoading = useCallback(() => setLoadingStage('idle'), [])
+  const closeSkippedNotice = useCallback(() => setSkippedFiles([]), [])
 
   const runDownloadCsv = () => {
     const csv = rowsToCSV(filtered)
@@ -499,6 +432,10 @@ export default function App() {
         />
       )}
 
+      {skippedFiles.length > 0 && (
+        <SkippedNotice names={skippedFiles} onClose={closeSkippedNotice} />
+      )}
+
       {/* Settings Button - Bottom Right */}
       <button
         type="button"
@@ -535,25 +472,7 @@ export default function App() {
           e.stopPropagation()
           setIsDraggingGlobal(false)
 
-          const files = Array.from(e.dataTransfer.files).filter(f => /(\.log|\.txt|\.csv)$/i.test(f.name))
-          if (files.length === 0) return
-
-          // Start loading animation
-          setLoadingStage('loading')
-          setLoadingFileCount(files.length)
-
-          // Process files
-          for (const file of files) {
-            try {
-              const text = await decodeFile(file)
-              onText(text, file.name)
-            } catch (err) {
-              console.error(`Failed to read ${file.name}:`, err)
-            }
-          }
-
-          // Files loaded, show complete animation
-          setLoadingStage('complete')
+          await loadFiles(Array.from(e.dataTransfer.files))
         }}
       >
         {/* Global Drop Overlay */}
@@ -562,7 +481,7 @@ export default function App() {
             <div className="popup border-2 border-dashed !border-accent px-10 py-8 text-center">
               <div className="kao text-base mb-2">(｀・ω・´)</div>
               <div className="font-extrabold text-accent mb-1">drop log files here</div>
-              <div className="text-xs text-muted">.log, .txt or .csv</div>
+              <div className="text-xs text-muted">any text log, rotated ones too</div>
             </div>
           </div>
         )}
@@ -571,32 +490,12 @@ export default function App() {
         <input
           ref={fileInputRef}
           type="file"
-          accept=".log,.txt,.csv"
           multiple
           className="hidden"
           onChange={async (e) => {
-            const files = e.target.files
-            if (!files || files.length === 0) return
-
-            // Start loading animation
-            setLoadingStage('loading')
-            setLoadingFileCount(files.length)
-
-            // Process files
-            for (let i = 0; i < files.length; i++) {
-              const file = files[i]
-              try {
-                const text = await decodeFile(file)
-                onText(text, file.name)
-              } catch (err) {
-                console.error(`Failed to read ${file.name}:`, err)
-              }
-            }
-
-            // Files loaded, show complete animation
-            setLoadingStage('complete')
-
-            e.target.value = ''
+            const input = e.target
+            await loadFiles(Array.from(input.files ?? []))
+            input.value = ''
           }}
         />
 
@@ -654,8 +553,8 @@ export default function App() {
                 highlightRe={highlightRe}
                 bookmarked={bookmarked}
                 onToggleBookmark={toggleBookmark}
-                selectedIndex={selectedIndex}
-                onSelectRow={setSelectedIndex}
+                selectedKey={selectedKey}
+                onSelectRow={setSelectedKey}
                 loadedFiles={loadedFiles}
                 showBookmarksOnly={filters.showBookmarksOnly}
                 onShowBookmarksOnlyChange={(checked) => setFilters(f => ({ ...f, showBookmarksOnly: checked }))}
@@ -680,7 +579,7 @@ export default function App() {
                     >
                       browse files…
                     </button>
-                    <div className="lbl mt-4">.log · .txt · .csv</div>
+                    <div className="lbl mt-4">any text log · .log · .log.1 · .txt · .csv</div>
                   </div>
                 </div>
               )}
@@ -717,7 +616,7 @@ export default function App() {
                     searchMode={filters.searchMode}
                     setSearchMode={(mode) => setFilters(f => ({ ...f, searchMode: mode }))}
                     currentMatchIndex={filters.currentMatchIndex}
-                    totalMatches={matchingIndices.length}
+                    totalMatches={matchingKeys.length}
                     onNextMatch={goToNextMatch}
                     onPrevMatch={goToPreviousMatch}
                     entries={entries}
