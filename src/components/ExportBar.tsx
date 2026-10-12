@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { FiltersState, LogEntry } from '../lib/types'
 import { rowsToCSV, buildMarkdownSummary } from '../lib/export'
 import Modal from './Modal'
@@ -77,6 +77,15 @@ function MarkdownModal({ markdown, onClose, onCopy, onDownload }: {
   onDownload: () => void
 }) {
   const [copied, setCopied] = useState(false)
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [onClose])
+
   return (
     <Modal onClose={onClose}>
       <div className="popup w-[min(90vw,900px)] max-h-[90vh] flex flex-col">

@@ -10,7 +10,7 @@ A fast, client‑side log viewer built with Vite + React + TypeScript. Drag and 
 - **Clean initial state**: When no files are loaded, only the LogNinja logo and file browser are shown - all other UI elements appear after loading
 - **Loading overlay**: a blurred overlay with the logo and a waiting kaomoji while files load, which switches to "ready" when they're done
 - **Global drag & drop**: Drop log files anywhere on the window, rotated ones like `server.log.1` included (UTF‑8/UTF‑16 aware; archives and other binary files are skipped with a note)
-- **Modal interactions**: settings, the Airlock summary, the query builder, the command palette and what's new close with Esc or a click outside; the Markdown export closes with its close button or a click outside
+- **Modal interactions**: settings, the Airlock summary, the query builder, the Markdown export, the command palette and what's new all close with Esc or a click outside
 - **What's new**: a short popup lists new features once per release (remembered in your browser only, nothing is sent anywhere); reopen it from settings or the command palette
 
 ### Log Viewing
@@ -96,7 +96,7 @@ Settings with system / light / dark modes and five colour palettes:
 ![Settings panel with appearance, palette and keymap](docs/screenshots/settings.png)
 
 ## Supported Formats (non‑exhaustive)
-- ISO 8601 / RFC 3339 with a time zone (`2026-01-05T10:00:01.123Z`, `...+10:00`), `YYYY-MM-DD HH:mm:ss[.SSS|,SSS]`
+- ISO 8601 / RFC 3339 (`2026-01-05T10:00:01.123Z`, `...+10:00`, or no zone, read as local time), `YYYY-MM-DD HH:mm:ss[.SSS|,SSS]`
 - `YYYY/MM/DD HH:mm:ss[.SSS|,SSS]`
 - DMY/MDY `dd/MM/yyyy HH:mm:ss[.SSS][ AM|PM]` (inferred)
 - `dd Mon yyyy HH:mm:ss[.SSS]`

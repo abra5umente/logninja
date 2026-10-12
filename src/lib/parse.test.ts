@@ -12,6 +12,13 @@ describe('parseLog', () => {
     expect(entry.fileName).toBe('app.log')
   })
 
+  it('parses an ISO timestamp with no zone as local time', () => {
+    const [entry] = parseLog('2026-01-05T10:00:01.123 WARN Slow query')
+    expect(entry.time?.getTime()).toBe(new Date(2026, 0, 5, 10, 0, 1, 123).getTime())
+    expect(entry.level).toBe('WARN')
+    expect(entry.message).toBe('Slow query')
+  })
+
   it('parses "YYYY-MM-DD HH:mm:ss,SSS" as local time', () => {
     const [entry] = parseLog('2025-08-13 09:15:30,123 [WARN] Disk nearly full')
     expect(entry.time?.getTime()).toBe(new Date(2025, 7, 13, 9, 15, 30, 123).getTime())
