@@ -26,6 +26,8 @@ A fast, client‑side log viewer built with Vite + React + TypeScript. Drag and 
   - Filter or highlight-only modes
   - Clear button to quickly reset search
   - Search presets for common queries
+  - **Query builder** ("build query"): list the words a line should have (any or all of them) and the ones it shouldn't, with `*` as a wildcard (`Program Files\*\app.exe`) or a regex per term, and a live preview of matching lines
+  - **Saved queries**: name a query in the builder to keep it (stored in your browser); it shows up under the presets, and "edit query" reopens it in the builder
 - **File filtering** (multi-file support):
   - Click a file → filter to show only that file's entries
   - Ctrl+Click files → multi-select mode (toggle multiple files on/off)
