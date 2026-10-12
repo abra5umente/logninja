@@ -3,7 +3,6 @@ name: CI
 on:
   push:
     branches: [main]
-    tags: ['v*']
   pull_request:
 
 concurrency:
@@ -27,7 +26,7 @@ jobs:
       - run: npm run build
 
   # Publishes ghcr.io/<owner>/logninja after the checks pass.
-  # main → :main and :sha-<commit>; a v1.2.3 tag → :1.2.3 and :1.2
+  # main → :main and :sha-<commit>
   image:
     needs: build-and-test
     if: github.event_name == 'push'
@@ -50,8 +49,6 @@ jobs:
           tags: |
             type=ref,event=branch
             type=sha,prefix=sha-
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
       - uses: docker/build-push-action@v6
         with:
           context: .
