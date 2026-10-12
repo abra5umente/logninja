@@ -7,6 +7,8 @@ import { FiltersState, LogEntry, LogLevel, FileInfo, entryKey } from './lib/type
 import { readLogFile } from './lib/decode'
 import { passesBaseFilters, withBookmarkContext } from './lib/filter'
 import TimelinePanel from './components/TimelinePanel'
+import PatternsPanel from './components/PatternsPanel'
+import ViewSwitch, { CenterView } from './components/ViewSwitch'
 import PresetsDropdown from './components/PresetsDropdown'
 import { buildSearchRegex } from './lib/search'
 import { nextLevelSelection } from './lib/levelSelection'
@@ -54,7 +56,6 @@ export default function App() {
   const [schemePref, setSchemePref] = useState<SchemePref>(getInitialSchemePref)
   const [systemLight, setSystemLight] = useState(systemPrefersLight)
   const [armedFileId, setArmedFileId] = useState<string | null>(null)
-  const [binMs, setBinMs] = useState<number>(60000)
   const [cmdOpen, setCmdOpen] = useState(false)
   const searchInputRef = useRef<HTMLInputElement>(null)
   const [airlockSummary, setAirlockSummary] = useState<Record<(typeof AIRLOCK_FIELDS)[number], string> | null>(null)
@@ -69,6 +70,7 @@ export default function App() {
   const toggleBookmark = (key: string) => setBookmarked(prev => { const n = new Set(prev); if (n.has(key)) n.delete(key); else n.add(key); return n })
   // The selected row, by entryKey so it stays put when files come and go
   const [selectedKey, setSelectedKey] = useState<string | null>(null)
+  const [centerView, setCenterView] = useState<CenterView>('rows')
   const [isDraggingGlobal, setIsDraggingGlobal] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [loadingStage, setLoadingStage] = useState<'idle' | 'loading' | 'complete'>('idle')
@@ -264,6 +266,16 @@ export default function App() {
     return baseFiltered.filter(matchesQuery)
   }, [baseFiltered, bookmarked, filters.showBookmarksOnly, filters.bookmarkContext, filters.searchMode, filters.highlightOnly, matchesQuery])
 
+  // The timeline shows what the table would show without the time range, so picking a range
+  // doesn't empty the bars around it. Search hides rows only in filter mode; in find and
+  // highlight mode the hits get their own strip instead.
+  const timelineEntries = useMemo(() => {
+    const noTime = { ...filters, timeRange: null }
+    const searchHides = filters.searchMode === 'filter' && !filters.highlightOnly ? matchesQuery : null
+    return entries.filter(e => passesBaseFilters(e, noTime) && (!searchHides || searchHides(e)))
+  }, [entries, filters.selectedFiles, filters.selectedLevels, filters.selectedLevel, filters.searchMode, filters.highlightOnly, matchesQuery])
+  const showTimelineHits = filters.searchMode === 'find' || filters.highlightOnly ? matchesQuery : null
+
   // Find mode: the rows that match the search, by entryKey
   const matchingKeys = useMemo(() => {
     if (filters.searchMode !== 'find' || !matchesQuery) return []
@@ -404,7 +416,15 @@ export default function App() {
     })
   }
 
+  // From the patterns view: filter the table to one pattern's rows via the search box,
+  // so the query stays visible and editable.
+  const showPatternRows = (regex: string) => {
+    setFilters(f => ({ ...f, query: regex, useRegex: true, searchMode: 'filter', highlightOnly: false, currentMatchIndex: 0 }))
+    setCenterView('rows')
+  }
+
   const commands: CommandItem[] = [
+    { id: 'toggle-patterns', label: centerView === 'patterns' ? 'Show Log Rows' : 'Show Log Patterns', run: () => setCenterView(v => (v === 'patterns' ? 'rows' : 'patterns')) },
     { id: 'toggle-highlight', label: filters.highlightOnly ? 'Disable Highlight Only' : 'Enable Highlight Only', run: () => setFilters(f => ({ ...f, highlightOnly: !f.highlightOnly })) },
     { id: 'clear-filters', label: 'Clear Filters', run: runClearFilters },
     { id: 'export-csv', label: 'Export CSV (filtered)', run: runDownloadCsv },
@@ -547,21 +567,32 @@ export default function App() {
           <main className="flex flex-col gap-3 min-h-0 overflow-hidden">
             {/* Virtual Table */}
             <div ref={tableWrapRef} className="relative flex-1 min-h-0">
-              <VirtualTable
-                rows={filtered}
-                height={tableHeight}
-                highlightRe={highlightRe}
-                bookmarked={bookmarked}
-                onToggleBookmark={toggleBookmark}
-                selectedKey={selectedKey}
-                onSelectRow={setSelectedKey}
-                loadedFiles={loadedFiles}
-                showBookmarksOnly={filters.showBookmarksOnly}
-                onShowBookmarksOnlyChange={(checked) => setFilters(f => ({ ...f, showBookmarksOnly: checked }))}
-                bookmarkContext={filters.bookmarkContext}
-                onBookmarkContextChange={(context) => setFilters(f => ({ ...f, bookmarkContext: context }))}
-                bookmarkCount={bookmarked.size}
-              />
+              {centerView === 'patterns' ? (
+                <PatternsPanel
+                  rows={filtered}
+                  height={tableHeight}
+                  onShowRows={showPatternRows}
+                  onJumpTo={(key) => { setSelectedKey(key); setCenterView('rows') }}
+                  headerControls={<ViewSwitch view={centerView} onChange={setCenterView} />}
+                />
+              ) : (
+                <VirtualTable
+                  rows={filtered}
+                  height={tableHeight}
+                  highlightRe={highlightRe}
+                  bookmarked={bookmarked}
+                  onToggleBookmark={toggleBookmark}
+                  selectedKey={selectedKey}
+                  onSelectRow={setSelectedKey}
+                  loadedFiles={loadedFiles}
+                  showBookmarksOnly={filters.showBookmarksOnly}
+                  onShowBookmarksOnlyChange={(checked) => setFilters(f => ({ ...f, showBookmarksOnly: checked }))}
+                  bookmarkContext={filters.bookmarkContext}
+                  onBookmarkContextChange={(context) => setFilters(f => ({ ...f, bookmarkContext: context }))}
+                  bookmarkCount={bookmarked.size}
+                  headerControls={<ViewSwitch view={centerView} onChange={setCenterView} />}
+                />
+              )}
 
               {/* Empty State Overlay */}
               {entries.length === 0 && (
@@ -589,9 +620,8 @@ export default function App() {
             {entries.length > 0 && (
               <div className="flex-shrink-0">
                 <TimelinePanel
-                  entries={entries}
-                  binMs={binMs}
-                  setBinMs={setBinMs}
+                  entries={timelineEntries}
+                  isMatch={showTimelineHits}
                   onSelectRange={(r) => setFilters(f => ({ ...f, timeRange: r }))}
                   activeRange={filters.timeRange ?? null}
                 />

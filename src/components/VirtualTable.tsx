@@ -19,6 +19,8 @@ interface Props {
   bookmarkContext?: number
   onBookmarkContextChange?: (context: number) => void
   bookmarkCount?: number
+  // shown first among the header controls (the rows / patterns switch)
+  headerControls?: React.ReactNode
 }
 
 const ROW_HEIGHT = 28 // px - height for single-line (no-wrap) rows
@@ -43,7 +45,7 @@ function rowAt(offsets: Float64Array, y: number): number {
   return lo
 }
 
-export default function VirtualTable({ rows, height: propHeight, highlightRe = null, bookmarked, onToggleBookmark, selectedKey = null, onSelectRow, loadedFiles = [], showBookmarksOnly = false, onShowBookmarksOnlyChange, bookmarkContext = 3, onBookmarkContextChange, bookmarkCount = 0 }: Props) {
+export default function VirtualTable({ rows, height: propHeight, highlightRe = null, bookmarked, onToggleBookmark, selectedKey = null, onSelectRow, loadedFiles = [], showBookmarksOnly = false, onShowBookmarksOnlyChange, bookmarkContext = 3, onBookmarkContextChange, bookmarkCount = 0, headerControls }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const labelsRef = useRef<HTMLDivElement>(null)
   const [scrollTop, setScrollTop] = useState(0)
@@ -226,6 +228,7 @@ export default function VirtualTable({ rows, height: propHeight, highlightRe = n
           </div>
         </div>
         <div className="ml-auto flex flex-shrink-0 items-center gap-3">
+          {headerControls}
           {/* Bookmark Controls (only shown when bookmarks exist) */}
           {bookmarkCount > 0 && (
             <>
