@@ -58,7 +58,7 @@ A fast, client‑side log viewer built with Vite + React + TypeScript. Drag and 
 - Copy all filtered entries to clipboard
 
 ### Special Features
-- **Airlock summary**: Auto-detected for Airlock Digital logs (modal with 60 fields grouped into Agent, Host, Server connection, Policy and Executions; Windows + Linux agents, including Linux 7.x debug logs). Click a value to search the log for the lines behind it
+- **Airlock summary**: Auto-detected for Airlock Digital logs (modal with 66 fields grouped into Agent, Host, Server connection, Policy and Executions; Windows + Linux agents, including 7.x debug logs from both). Click a value to search the log for the lines behind it
 
 ## Screenshots
 Enhanced Airlock Digital log support:
@@ -84,6 +84,7 @@ Highlight search mode:
 - MongoDB structured JSON `{ "t": { "$date": ... }, "s": "I", "msg": ... }`
 - MSI: `MSI (c|s) (...) [HH:mm:ss:SSS]` (time‑only; date inferred from file), or `[YYYY-MM-DD HH:mm:ss:SSS]`
 - Airlock agent (Linux): `YYYY-MM-DD HH:mm:ss INFO|WARN|ERROR|DEBUG message` and `FILE CHECK Filename=... Result="..."` (blocked = ERROR, blocked in audit mode = WARN, allowed = INFO)
+- Airlock agent (Windows): tab-separated `MM/DD/YYYY h:mm:ss AM|PM`, kind (`INFO|WARNING|ERROR|DEBUG|FILE CHECK|FILE PRE-CHECK`), thread id, message. `FILE CHECK ... Result: ...` and `[EXT-BLOCK] Extension Title: ... Result: ...` take their level from the result (blocked = ERROR, allowed = INFO); the `Blocking Reasons:` line joins its `FILE CHECK` row; the thread id is kept as `[1234]` at the start of the message
 - Airlock server services (Go logger): `YYYY/MM/DD HH:mm:ss file.go:123: message`
 - Airlock server workers: `[YYYY-MM-DD HH:mm:ss] [Tag] message`, `[<ISO ts>] message`
 - Airlock server activity: `ServerActivityMessage|dd/MM/yyyy hh:mm:ss AM|Category|user|message`
