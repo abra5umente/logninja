@@ -10,6 +10,7 @@ A fast, client‑side log viewer built with Vite + React + TypeScript. Drag and 
 - **Loading animations**: Smooth blur overlay with animated logo and spinner during file processing, with checkmark completion state
 - **Global drag & drop**: Drop `.log/.txt/.csv` files anywhere on the window (UTF‑8/UTF‑16 BOM aware)
 - **Modal interactions**: Settings sidebar, Airlock summary modal with ESC/click-outside to dismiss
+- **What's new**: a short popup lists new features once per release (remembered in your browser only, nothing is sent anywhere); reopen it from settings or the command palette
 
 ### Log Viewing
 - **High-performance virtual scrolling**: Handles millions of log entries smoothly
