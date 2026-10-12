@@ -195,7 +195,7 @@ export default function SettingsSidebar({
                         rel="noreferrer"
                         className="link !text-xs"
                     >
-                        logninja v1.0.0-1 on github
+                        logninja on github
                     </a>
                     <button
                         onClick={() => setCreditsOpen(true)}
