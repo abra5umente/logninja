@@ -18,7 +18,7 @@ interface Props {
   totalMatches?: number
   onNextMatch?: () => void
   onPrevMatch?: () => void
-  /** Loaded entries, for the query builder's live preview */
+  /** The rows the search runs within (after the file, level, time and search-within filters), for the query builder's live preview */
   entries?: LogEntry[]
   /** "Search within" steps, the rows left after each, and the rows before the first */
   steps?: SearchStep[]

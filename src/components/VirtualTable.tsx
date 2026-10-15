@@ -3,6 +3,7 @@ import { LogEntry, FileInfo, entryKey } from '../lib/types'
 import { levelTextClass } from '../lib/levelColors'
 import { formatEntryTime } from '../lib/formatTime'
 import { scrollMap } from '../lib/scrollMap'
+import type { TimeMode } from '../lib/timeMode'
 
 interface Props {
   rows: LogEntry[]
@@ -22,6 +23,9 @@ interface Props {
   bookmarkCount?: number
   // shown first among the header controls (the rows / patterns switch)
   headerControls?: React.ReactNode
+  /** Times in the viewer's zone or as the log wrote them; the rows already carry the shown time */
+  timeMode?: TimeMode
+  onTimeModeChange?: (mode: TimeMode) => void
 }
 
 const ROW_HEIGHT = 28 // px - height for single-line (no-wrap) rows
@@ -44,9 +48,9 @@ function getMaxElementHeight(): number {
   return maxElementHeight
 }
 
-// Hover text for the time cell: the log's own text and the moment in UTC
+// Hover text for the time cell: the time exactly as the log wrote it
 function timeTitle(entry: LogEntry): string {
-  return entry.time ? `${entry.timeStr} (${entry.time.toISOString()} UTC)` : entry.timeStr
+  return entry.timeStr ? `in the log: ${entry.timeStr}` : ''
 }
 
 // First position whose top edge is past y: offsets[i] is the top of row i, offsets[n] the total height
@@ -60,7 +64,7 @@ function rowAt(offsets: Float64Array, y: number): number {
   return lo
 }
 
-export default function VirtualTable({ rows, height: propHeight, highlightRe = null, bookmarked, onToggleBookmark, selectedKey = null, onSelectRow, loadedFiles = [], showBookmarksOnly = false, onShowBookmarksOnlyChange, bookmarkContext = 3, onBookmarkContextChange, bookmarkCount = 0, headerControls }: Props) {
+export default function VirtualTable({ rows, height: propHeight, highlightRe = null, bookmarked, onToggleBookmark, selectedKey = null, onSelectRow, loadedFiles = [], showBookmarksOnly = false, onShowBookmarksOnlyChange, bookmarkContext = 3, onBookmarkContextChange, bookmarkCount = 0, headerControls, timeMode = 'local', onTimeModeChange }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const labelsRef = useRef<HTMLDivElement>(null)
   const [scrollTop, setScrollTop] = useState(0)
@@ -285,6 +289,29 @@ export default function VirtualTable({ rows, height: propHeight, highlightRe = n
                 </div>
               )}
             </>
+          )}
+
+          {onTimeModeChange && (
+            <div className="seg" role="radiogroup" aria-label="Time zone">
+              <button
+                className={`!py-1 ${timeMode === 'local' ? 'on' : ''}`}
+                onClick={() => onTimeModeChange('local')}
+                role="radio"
+                aria-checked={timeMode === 'local'}
+                title="Show times in your own time zone"
+              >
+                local
+              </button>
+              <button
+                className={`!py-1 ${timeMode === 'log' ? 'on' : ''}`}
+                onClick={() => onTimeModeChange('log')}
+                role="radio"
+                aria-checked={timeMode === 'log'}
+                title="Show times in the time zone the log was written in"
+              >
+                as logged
+              </button>
+            </div>
           )}
 
           <div className="seg" role="radiogroup" aria-label="Line wrapping">

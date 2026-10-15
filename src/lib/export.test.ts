@@ -54,14 +54,29 @@ describe('rowsToCSVChunks', () => {
     const chunks = rowsToCSVChunks(rows, [row(7)])
     expect(chunks.length).toBe(3)
     const lines = chunks.join('').split('\n')
-    expect(lines[0]).toBe('Time,Level,Message')
+    expect(lines[0]).toBe('Time (local),Level,Message')
     expect(lines[1]).toBe('t0,INFO,"msg, 0"')
     expect(lines[25_000]).toBe('t24999,INFO,"msg, 24999"')
-    expect(lines.slice(25_001)).toEqual(['', 'Bookmarked Lines', 'Time,Level,Message', 't7,INFO,"msg, 7"'])
+    expect(lines.slice(25_001)).toEqual(['', 'Bookmarked Lines', 'Time (local),Level,Message', 't7,INFO,"msg, 7"'])
   })
 
   it('gives one piece for a small export', () => {
-    expect(rowsToCSVChunks([row(0)])).toEqual(['Time,Level,Message\nt0,INFO,"msg, 0"'])
-    expect(rowsToCSV([])).toBe('Time,Level,Message')
+    expect(rowsToCSVChunks([row(0)])).toEqual(['Time (local),Level,Message\nt0,INFO,"msg, 0"'])
+    expect(rowsToCSV([])).toBe('Time (local),Level,Message')
+  })
+})
+
+describe('CSV cells', () => {
+  const entry = (message: string, time: Date | null = null): LogEntry =>
+    ({ index: 0, line: 1, time, timeStr: 't', level: 'INFO', source: '', message, raw: message })
+
+  it('keeps cells that a spreadsheet would run as a formula as text', () => {
+    const csv = rowsToCSV([entry('=HYPERLINK("x")'), entry('+1'), entry('-a'), entry('@SUM(A1)'), entry('fine')])
+    expect(csv.split('\n').slice(1).map(l => l.split(',').slice(2).join(','))).toEqual([`"'=HYPERLINK(""x"")"`, "'+1", "'-a", "'@SUM(A1)", 'fine'])
+  })
+
+  it('writes times as the table shows them and says which clock', () => {
+    const csv = rowsToCSV([entry('a', new Date(2026, 0, 5, 14, 0, 7))], [], 'log')
+    expect(csv).toBe('Time (as logged),Level,Message\n2026-01-05 14:00:07,INFO,a')
   })
 })

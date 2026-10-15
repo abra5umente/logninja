@@ -25,6 +25,7 @@ import LoadingOverlay from './components/LoadingOverlay'
 import GroupHeading from './components/GroupHeading'
 import WhatsNewModal from './components/WhatsNewModal'
 import { WHATS_NEW, WhatsNewRelease, getSeenId, markSeen, unseenRelease } from './lib/whatsNew'
+import { TimeMode, getTimeMode, inLogTime, saveTimeMode } from './lib/timeMode'
 import { applyTheme, getInitialPalette, getInitialSchemePref, resolveScheme, savePalette, saveSchemePref, systemPrefersLight, watchSystemScheme, Palette, SchemePref, PALETTES, PALETTE_LABELS } from './lib/theme'
 
 // Colours for different log files, from the theme's named colours so they follow the palette.
@@ -71,7 +72,17 @@ export default function App() {
   const [bookmarked, setBookmarked] = useState<Set<string>>(new Set())
   const [loadStats, setLoadStats] = useState({ files: 0, ms: 0, lines: 0 })
   const [showLoadBanner, setShowLoadBanner] = useState(false)
-  const bookmarkedRows = useMemo(() => entries.filter(e => bookmarked.has(entryKey(e))), [entries, bookmarked])
+  // Times in the viewer's zone, or moved onto the clock each log was written in. Everything below
+  // works on shownEntries, so the table, timeline, time range, summary and exports all follow it.
+  const [timeMode, setTimeModeState] = useState<TimeMode>(getTimeMode)
+  const shownEntries = useMemo(() => (timeMode === 'log' ? inLogTime(entries) : entries), [entries, timeMode])
+  const setTimeMode = (mode: TimeMode) => {
+    setTimeModeState(mode)
+    saveTimeMode(mode)
+    // A picked time range was on the other clock
+    setFilters(f => (f.timeRange ? { ...f, timeRange: null } : f))
+  }
+  const bookmarkedRows = useMemo(() => shownEntries.filter(e => bookmarked.has(entryKey(e))), [shownEntries, bookmarked])
   const toggleBookmark = (key: string) => setBookmarked(prev => { const n = new Set(prev); if (n.has(key)) n.delete(key); else n.add(key); return n })
   // The selected row, by entryKey so it stays put when files come and go
   const [selectedKey, setSelectedKey] = useState<string | null>(null)
@@ -269,8 +280,8 @@ export default function App() {
 
   // Rows that pass the file, level and time filters
   const preStepRows = useMemo(
-    () => entries.filter(e => passesBaseFilters(e, filters)),
-    [entries, filters.selectedFiles, filters.selectedLevels, filters.selectedLevel, filters.timeRange]
+    () => shownEntries.filter(e => passesBaseFilters(e, filters)),
+    [shownEntries, filters.selectedFiles, filters.selectedLevels, filters.selectedLevel, filters.timeRange]
   )
 
   // ...narrowed by the "search within" steps, one at a time so each step can show its count.
@@ -292,10 +303,11 @@ export default function App() {
 
   const filtered = useMemo(() => {
     // Bookmark-only mode: bookmarks with context, within the other filters
-    if (filters.showBookmarksOnly) return withBookmarkContext(baseFiltered, bookmarked, filters.bookmarkContext)
-    // Find mode and highlight-only show every row and only mark the matches
-    if (filters.searchMode === 'find' || filters.highlightOnly || !matchesQuery) return baseFiltered
-    return baseFiltered.filter(matchesQuery)
+    const rows = filters.showBookmarksOnly ? withBookmarkContext(baseFiltered, bookmarked, filters.bookmarkContext) : baseFiltered
+    // Find mode and highlight-only show every row and only mark the matches; filter mode narrows
+    // the bookmark view too (clicking a pattern there relies on it)
+    if (filters.searchMode === 'find' || filters.highlightOnly || !matchesQuery) return rows
+    return rows.filter(matchesQuery)
   }, [baseFiltered, bookmarked, filters.showBookmarksOnly, filters.bookmarkContext, filters.searchMode, filters.highlightOnly, matchesQuery])
 
   // The timeline shows what the table would show without the time range, so picking a range
@@ -304,8 +316,8 @@ export default function App() {
   const timelineEntries = useMemo(() => {
     const noTime = { ...filters, timeRange: null }
     const searchHides = filters.searchMode === 'filter' && !filters.highlightOnly ? matchesQuery : null
-    return entries.filter(e => passesBaseFilters(e, noTime) && (!stepsMatch || stepsMatch(e)) && (!searchHides || searchHides(e)))
-  }, [entries, filters.selectedFiles, filters.selectedLevels, filters.selectedLevel, filters.searchMode, filters.highlightOnly, matchesQuery, stepsMatch])
+    return shownEntries.filter(e => passesBaseFilters(e, noTime) && (!stepsMatch || stepsMatch(e)) && (!searchHides || searchHides(e)))
+  }, [shownEntries, filters.selectedFiles, filters.selectedLevels, filters.selectedLevel, filters.searchMode, filters.highlightOnly, matchesQuery, stepsMatch])
   const showTimelineHits = filters.searchMode === 'find' || filters.highlightOnly ? matchesQuery : null
 
   // Find mode: the rows that match the search, by entryKey. From the rows shown, so with
@@ -423,7 +435,7 @@ export default function App() {
   const closeSkippedNotice = useCallback(() => setSkippedFiles([]), [])
 
   const runDownloadCsv = () => {
-    const url = URL.createObjectURL(csvBlob(filtered))
+    const url = URL.createObjectURL(csvBlob(filtered, [], timeMode))
     const a = document.createElement('a')
     a.href = url
     a.download = 'logs.csv'
@@ -436,7 +448,7 @@ export default function App() {
 
   const runCopyCsv = async () => {
     // rowsToCSV throws when the rows are too much text for one string; export still works then
-    try { await navigator.clipboard.writeText(rowsToCSV(filtered)) } catch {}
+    try { await navigator.clipboard.writeText(rowsToCSV(filtered, [], timeMode)) } catch {}
   }
 
   const runClearFilters = () => {
@@ -473,6 +485,7 @@ export default function App() {
     { id: 'toggle-patterns', label: centerView === 'patterns' ? 'Show Log Rows' : 'Show Log Patterns', run: () => setCenterView(v => (v === 'patterns' ? 'rows' : 'patterns')) },
     { id: 'toggle-highlight', label: filters.highlightOnly ? 'Disable Highlight Only' : 'Enable Highlight Only', run: () => setFilters(f => ({ ...f, highlightOnly: !f.highlightOnly })) },
     { id: 'clear-filters', label: 'Clear Filters', run: runClearFilters },
+    { id: 'time-mode', label: timeMode === 'local' ? 'Show Times as Logged' : 'Show Times in Local Time', run: () => setTimeMode(timeMode === 'local' ? 'log' : 'local') },
     ...(filters.query.trim() ? [
       { id: 'search-within', label: 'Search Within Matches', run: () => searchWithin(false) },
       { id: 'search-without', label: 'Hide Matches and Keep Searching', run: () => searchWithin(true) },
@@ -598,7 +611,7 @@ export default function App() {
             {/* Log Summary */}
             {entries.length > 0 && (
               <LogSummary
-                entries={entries}
+                entries={shownEntries}
                 fileName={loadedFiles.length > 0 ? loadedFiles.map(f => f.name).join(', ') : ''}
                 loadTime={loadStats.ms}
               />
@@ -608,7 +621,7 @@ export default function App() {
             {entries.length > 0 && (
               <section className="glass card">
                 <GroupHeading title="export & actions" />
-                <ExportBar rows={filtered} filters={filters} bookmarked={bookmarkedRows} resetFilters={runClearFilters} />
+                <ExportBar rows={filtered} filters={filters} bookmarked={bookmarkedRows} resetFilters={runClearFilters} timeMode={timeMode} />
               </section>
             )}
 
@@ -651,6 +664,8 @@ export default function App() {
                   onBookmarkContextChange={(context) => setFilters(f => ({ ...f, bookmarkContext: context }))}
                   bookmarkCount={bookmarked.size}
                   headerControls={<ViewSwitch view={centerView} onChange={setCenterView} />}
+                  timeMode={timeMode}
+                  onTimeModeChange={setTimeMode}
                 />
               )}
 
@@ -680,6 +695,7 @@ export default function App() {
             {entries.length > 0 && (
               <div className="flex-shrink-0">
                 <TimelinePanel
+                  key={timeMode}
                   entries={timelineEntries}
                   isMatch={showTimelineHits}
                   onSelectRange={(r) => setFilters(f => ({ ...f, timeRange: r }))}
@@ -709,7 +725,7 @@ export default function App() {
                     totalMatches={matchingKeys.length}
                     onNextMatch={goToNextMatch}
                     onPrevMatch={goToPreviousMatch}
-                    entries={entries}
+                    entries={baseFiltered}
                     steps={filters.searchSteps}
                     stepCounts={stepCounts}
                     totalBeforeSteps={preStepRows.length}
@@ -805,7 +821,9 @@ export default function App() {
                   collapsed={false}
                   setCollapsed={() => {}}
                   onFilterText={(text, useRegex = false) => {
-                    setFilters(f => ({ ...f, query: text, useRegex }))
+                    // Filter the table to the lines behind the value, as the button says
+                    setFilters(f => ({ ...f, query: text, useRegex, searchMode: 'filter', highlightOnly: false, currentMatchIndex: 0 }))
+                    setCenterView('rows')
                     setAirlockModalOpen(false)
                   }}
                 />

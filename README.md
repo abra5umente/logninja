@@ -64,15 +64,16 @@ A fast, client‑side log viewer built with Vite + React + TypeScript. Drag and 
   - Keyboard: focus the timeline, then arrow keys move between bars, Enter zooms in, Backspace zooms out
   - A readout above the bars shows the range you're looking at (or hovering), its entry count, per-level counts and search hits
   - Long spans (a year or more) bin by whole days, so big files stay quick
+- **Local or as-logged times**: the "local / as logged" switch above the table shows times in your own time zone or in the zone each log wrote them in (for timestamps that name one, like `Z` or `+10:00`). The table, search, timeline, summary and exports all follow it
 
 ### Bookmarks & Export
 - Bookmarks: star lines and export them (CSV/Markdown includes "Bookmarked Lines")
   - **Bookmark-only view**: Show only bookmarked lines with configurable context (±1, 3, 5, or 10 lines), within the current level, file and time filters
-- Export to CSV or Markdown
+- Export to CSV or Markdown (times as the table shows them; cells that would run as spreadsheet formulas are kept as text)
 - Copy all filtered entries to the clipboard as CSV (very large exports are download-only)
 
 ### Special Features
-- **Airlock summary**: Auto-detected for Airlock Digital logs (modal with 71 fields grouped into Agent, Host, Server connection, Policy and Executions; Windows, Linux and macOS agents, including 7.x debug logs from all three). Click a value to search the log for the lines behind it
+- **Airlock summary**: Auto-detected for Airlock Digital logs (modal with 71 fields grouped into Agent, Host, Server connection, Policy and Executions; Windows, Linux and macOS agents, including 7.x debug logs from all three). Click a value to filter the table to the lines behind it
 
 ## Screenshots
 Two logs loaded together, with find mode jumping between search hits, the log summary and the stacked timeline with search hits marked under it:

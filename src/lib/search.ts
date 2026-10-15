@@ -1,4 +1,5 @@
 import type { LogEntry, SearchStep } from './types'
+import { formatEntryTime } from './formatTime'
 
 export function escapeRegExp(s: string) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -39,25 +40,47 @@ export function buildSearchRegex(query: string, useRegex: boolean): { re: RegExp
 }
 
 
-/** The text a search runs against: displayed time, level and message, not the raw line */
+/** The text a search runs against: the time as the log wrote it, level and message, not the raw line */
 export function searchText(e: Pick<LogEntry, 'timeStr' | 'level' | 'message'>): string {
   return `${e.timeStr} ${e.level} ${e.message}`
 }
 
 /**
+ * The same with the time as the table shows it, or null when that reads the same as the log's own.
+ * A search for a time the user can see in the table has to find it even when the log wrote it in
+ * another zone or format ("13 Aug 2025 00:00:02" shows as "2025-08-13 00:00:02").
+ */
+export function shownSearchText(e: Pick<LogEntry, 'time' | 'timeStr' | 'level' | 'message'>): string | null {
+  if (!e.time) return null
+  const shown = formatEntryTime(e)
+  return shown === e.timeStr ? null : `${shown} ${e.level} ${e.message}`
+}
+
+/**
  * A test for one search, or null when the query is empty. A regex that
  * buildSearchRegex refuses falls back to a plain case-insensitive contains.
+ * Rows are tested against the log's own time first, then the shown time when the
+ * search could be about a time (it has a digit in it).
  */
 export function buildMatcher(query: string, useRegex: boolean): ((e: LogEntry) => boolean) | null {
   const q = query.trim()
   if (!q) return null
+  const timeish = /\d|\\d/.test(q)
   const { re } = buildSearchRegex(q, useRegex)
+  let test: (text: string) => boolean
   if (re) {
     const testRe = new RegExp(re.source, re.flags.replace('g', ''))
-    return e => testRe.test(searchText(e))
+    test = text => testRe.test(text)
+  } else {
+    const needle = q.toLowerCase()
+    test = text => text.toLowerCase().includes(needle)
   }
-  const needle = q.toLowerCase()
-  return e => searchText(e).toLowerCase().includes(needle)
+  if (!timeish) return e => test(searchText(e))
+  return e => {
+    if (test(searchText(e))) return true
+    const shown = shownSearchText(e)
+    return shown !== null && test(shown)
+  }
 }
 
 /** The "search within" steps as one test, or null when there are none */

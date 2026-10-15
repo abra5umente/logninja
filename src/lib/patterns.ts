@@ -69,6 +69,8 @@ export function templateOf(message: string): string {
 }
 
 // Splits a template into literal text and placeholders, for rendering.
+// Known gap: a line that literally contains "<id>", "<n>" etc. (usage text like "cmd <path>") reads
+// as a placeholder here, so its pattern's search misses its own rows. Rare enough to leave for now.
 export function templateParts(template: string): { text: string; placeholder: boolean }[] {
   const parts: { text: string; placeholder: boolean }[] = []
   const re = /<(url|email|uuid|time|ip|mac|path|hex|id|n)>/g
