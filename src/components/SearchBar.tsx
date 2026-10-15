@@ -2,7 +2,8 @@ import React, { forwardRef, useState } from 'react'
 import RegexBuilder from './RegexBuilder'
 import { type BuilderQuery, queryFromSearch } from '../lib/regexBuilder'
 import { useSavedQueries } from '../lib/savedQueries'
-import type { LogEntry } from '../lib/types'
+import { describeStep } from '../lib/search'
+import type { LogEntry, SearchStep } from '../lib/types'
 
 interface Props {
   query: string
@@ -19,6 +20,16 @@ interface Props {
   onPrevMatch?: () => void
   /** Loaded entries, for the query builder's live preview */
   entries?: LogEntry[]
+  /** "Search within" steps, the rows left after each, and the rows before the first */
+  steps?: SearchStep[]
+  stepCounts?: number[]
+  totalBeforeSteps?: number
+  /** Pin the current search as a step: keep its matches, or (exclude) hide them */
+  onSearchWithin?: (exclude: boolean) => void
+  onRemoveStep?: (index: number) => void
+  /** Drop every step after this one */
+  onBackToStep?: (index: number) => void
+  onClearSteps?: () => void
 }
 
 /** What the builder last applied, so reopening it picks up where you left off */
@@ -30,7 +41,8 @@ interface LastBuilt {
 
 const SearchBar = forwardRef<HTMLInputElement, Props>(function SearchBar({
   query, setQuery, useRegex, setUseRegex, highlightOnly, setHighlightOnly,
-  searchMode, setSearchMode, currentMatchIndex, totalMatches, onNextMatch, onPrevMatch, entries
+  searchMode, setSearchMode, currentMatchIndex, totalMatches, onNextMatch, onPrevMatch, entries,
+  steps = [], stepCounts = [], totalBeforeSteps, onSearchWithin, onRemoveStep, onBackToStep, onClearSteps
 }, ref) {
   const [builderStart, setBuilderStart] = useState<{ query: BuilderQuery; savedId: string | null } | null>(null)
   const [lastBuilt, setLastBuilt] = useState<LastBuilt | null>(null)
@@ -63,6 +75,57 @@ const SearchBar = forwardRef<HTMLInputElement, Props>(function SearchBar({
 
   return (
     <div className="flex flex-col gap-2">
+      {/* Search within: the pinned steps as a trail, each narrowing the one before */}
+      {steps.length > 0 && (
+        <div className="flex flex-col gap-1 rounded-inner border border-line bg-bg/45 p-2" aria-label="Searching within">
+          <div className="flex items-center gap-2">
+            <span className="lbl">searching within</span>
+            <span className="flex-1" />
+            <button type="button" onClick={onClearSteps} className="text-[11px] text-muted hover:text-fg" title="Remove every step and search all rows again">
+              clear
+            </button>
+          </div>
+          <button
+            type="button"
+            onClick={onClearSteps}
+            className="flex items-center gap-2 text-left text-[11px] text-muted hover:text-fg"
+            title="Back to all rows"
+          >
+            <span className="flex-1">all rows</span>
+            {totalBeforeSteps !== undefined && <span className="tabular-nums">{totalBeforeSteps.toLocaleString()}</span>}
+          </button>
+          {steps.map((step, i) => {
+            const label = describeStep(step)
+            const last = i === steps.length - 1
+            return (
+              <div key={`${i}-${label}`} className="flex items-center gap-1.5 text-[11px]">
+                <span className="text-muted" aria-hidden>{'›'}</span>
+                <button
+                  type="button"
+                  onClick={() => onBackToStep?.(i)}
+                  disabled={last}
+                  className={`flex-1 min-w-0 flex items-center gap-2 text-left ${last ? 'text-fg cursor-default' : 'text-muted hover:text-fg'}`}
+                  title={last ? label : `Back to this step (drops the steps after it): ${label}`}
+                >
+                  <span className={`truncate ${step.exclude ? 'text-magenta' : 'text-accent'}`}>{label}</span>
+                  <span className="flex-1" />
+                  <span className="tabular-nums">{(stepCounts[i] ?? 0).toLocaleString()}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onRemoveStep?.(i)}
+                  className="px-1 text-muted hover:text-fg rounded-chip"
+                  aria-label={`Remove step ${label}`}
+                  title="Remove this step"
+                >
+                  ×
+                </button>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
       <div className="relative">
         <input
           type="text"
@@ -86,6 +149,28 @@ const SearchBar = forwardRef<HTMLInputElement, Props>(function SearchBar({
           </button>
         )}
       </div>
+
+      {/* Search within the matches: pin this search and start the next one */}
+      {current && onSearchWithin && (
+        <div className="flex gap-1">
+          <button
+            type="button"
+            onClick={() => onSearchWithin(false)}
+            className="btn flex-1 !px-2 !py-1 !text-[11px]"
+            title="Keep only the rows matching this search, then search within them (Ctrl+Enter)"
+          >
+            search within these
+          </button>
+          <button
+            type="button"
+            onClick={() => onSearchWithin(true)}
+            className="btn flex-1 !px-2 !py-1 !text-[11px]"
+            title="Hide the rows matching this search, then keep searching the rest (Ctrl+Shift+Enter)"
+          >
+            hide these
+          </button>
+        </div>
+      )}
 
       {/* Search Mode Toggle */}
       <div className="seg full" role="radiogroup" aria-label="Search mode">

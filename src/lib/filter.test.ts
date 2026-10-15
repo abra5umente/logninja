@@ -5,7 +5,7 @@ import { FiltersState, LogEntry, LogLevel } from './types'
 const filters: FiltersState = {
   selectedLevel: null, selectedLevels: null, selectedFiles: null, query: '', useRegex: false,
   timeRange: null, highlightOnly: false, showBookmarksOnly: true, bookmarkContext: 1,
-  searchMode: 'find', currentMatchIndex: 0,
+  searchMode: 'find', currentMatchIndex: 0, searchSteps: [],
 }
 
 const entry = (line: number, level: LogLevel = 'INFO', fileId = 'a'): LogEntry => ({

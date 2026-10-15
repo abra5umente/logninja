@@ -28,6 +28,7 @@ A fast, client‑side log viewer built with Vite + React + TypeScript. Drag and 
   - **Find** mode (the default) keeps every row and jumps between matches with Enter / Shift+Enter or the arrow buttons
   - **Filter** mode hides rows that don't match; **highlight only** shows everything and just marks the matches
   - Clear button to quickly reset search
+  - **Search within results**: "search within these" (Ctrl/Cmd+Enter) keeps only the rows matching the current search and empties the box for the next one; "hide these" (Ctrl/Cmd+Shift+Enter) drops them instead. Steps stack as a trail above the search box with the rows left after each; click a step to go back to it, or × to remove just that one. Find, filter, bookmarks, patterns, the timeline and exports all work within the narrowed rows
   - Built-in presets (PowerShell suspicious, Windows crash keywords, Airlock Digital terms)
   - **Query builder** ("build query"): list the words a line should have (any or all of them) and the ones it shouldn't, with `*` as a wildcard (`Program Files\*\app.exe`) or a regex per term, and a live preview of matching lines
   - **Saved queries**: name a query in the builder to keep it (stored in your browser); it shows up under the presets, and "edit query" reopens it in the builder
