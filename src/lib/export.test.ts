@@ -14,6 +14,7 @@ const filters: FiltersState = {
   bookmarkContext: 3,
   searchMode: 'find',
   currentMatchIndex: 0,
+  searchSteps: [],
 }
 
 describe('buildMarkdownSummary', () => {
@@ -23,5 +24,14 @@ describe('buildMarkdownSummary', () => {
 
   it('lists the levels picked in the level filter', () => {
     expect(buildMarkdownSummary([], { ...filters, selectedLevels: ['ERROR', 'WARN'] })).toContain('- Active levels: ERROR, WARN')
+  })
+
+  it('lists the search within steps in order', () => {
+    const steps = [
+      { query: 'error', useRegex: false, exclude: false },
+      { query: 'time(d )?out', useRegex: true, exclude: true },
+    ]
+    expect(buildMarkdownSummary([], { ...filters, searchSteps: steps })).toContain('- Searching within: error › not /time(d )?out/')
+    expect(buildMarkdownSummary([], filters)).not.toContain('Searching within')
   })
 })

@@ -10,7 +10,7 @@ import TimelinePanel from './components/TimelinePanel'
 import PatternsPanel from './components/PatternsPanel'
 import ViewSwitch, { CenterView } from './components/ViewSwitch'
 import PresetsDropdown from './components/PresetsDropdown'
-import { buildSearchRegex } from './lib/search'
+import { addSearchStep, applySearchSteps, buildMatcher, buildSearchRegex, buildStepsMatcher } from './lib/search'
 import { nextLevelSelection } from './lib/levelSelection'
 import ExportBar from './components/ExportBar'
 import CommandPalette, { CommandItem } from './components/CommandPalette'
@@ -52,6 +52,7 @@ export default function App() {
     bookmarkContext: 3,
     searchMode: 'find',  // Default to find mode (jump to matches)
     currentMatchIndex: 0,
+    searchSteps: [],
   })
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [palette, setPalette] = useState<Palette>(getInitialPalette)
@@ -255,22 +256,30 @@ export default function App() {
   const highlightRe = compiledRe
 
   // Search test against `time level message`, built once rather than per row
-  const matchesQuery = useMemo(() => {
-    const q = filters.query.trim()
-    if (!q) return null
-    if (highlightRe) {
-      const testRe = new RegExp(highlightRe.source, highlightRe.flags.replace('g', ''))
-      return (e: LogEntry) => testRe.test(`${e.timeStr} ${e.level} ${e.message}`)
-    }
-    const needle = q.toLowerCase()
-    return (e: LogEntry) => `${e.timeStr} ${e.level} ${e.message}`.toLowerCase().includes(needle)
-  }, [filters.query, highlightRe])
+  const matchesQuery = useMemo(() => buildMatcher(filters.query, filters.useRegex), [filters.query, filters.useRegex])
 
   // Rows that pass the file, level and time filters
-  const baseFiltered = useMemo(
+  const preStepRows = useMemo(
     () => entries.filter(e => passesBaseFilters(e, filters)),
     [entries, filters.selectedFiles, filters.selectedLevels, filters.selectedLevel, filters.timeRange]
   )
+
+  // ...narrowed by the "search within" steps, one at a time so each step can show its count.
+  // Everything after this (find, filter, bookmarks, patterns) works within these rows.
+  const { rows: baseFiltered, counts: stepCounts } = useMemo(
+    () => applySearchSteps(preStepRows, filters.searchSteps),
+    [preStepRows, filters.searchSteps]
+  )
+  const stepsMatch = useMemo(() => buildStepsMatcher(filters.searchSteps), [filters.searchSteps])
+
+  // Pins the current search as a step and empties the box for the next one
+  const searchWithin = (exclude: boolean) => {
+    setFilters(f => {
+      const searchSteps = addSearchStep(f.searchSteps, f.query, f.useRegex, exclude)
+      if (searchSteps === f.searchSteps && !f.query.trim()) return f
+      return { ...f, searchSteps, query: '', currentMatchIndex: 0 }
+    })
+  }
 
   const filtered = useMemo(() => {
     // Bookmark-only mode: bookmarks with context, within the other filters
@@ -286,8 +295,8 @@ export default function App() {
   const timelineEntries = useMemo(() => {
     const noTime = { ...filters, timeRange: null }
     const searchHides = filters.searchMode === 'filter' && !filters.highlightOnly ? matchesQuery : null
-    return entries.filter(e => passesBaseFilters(e, noTime) && (!searchHides || searchHides(e)))
-  }, [entries, filters.selectedFiles, filters.selectedLevels, filters.selectedLevel, filters.searchMode, filters.highlightOnly, matchesQuery])
+    return entries.filter(e => passesBaseFilters(e, noTime) && (!stepsMatch || stepsMatch(e)) && (!searchHides || searchHides(e)))
+  }, [entries, filters.selectedFiles, filters.selectedLevels, filters.selectedLevel, filters.searchMode, filters.highlightOnly, matchesQuery, stepsMatch])
   const showTimelineHits = filters.searchMode === 'find' || filters.highlightOnly ? matchesQuery : null
 
   // Find mode: the rows that match the search, by entryKey
@@ -351,6 +360,13 @@ export default function App() {
       // Find mode navigation: Enter = next, Shift+Enter = previous. Only from the search box or with nothing
       // focused, so Enter still works in dialogs and on buttons.
       const fromSearchOrPage = target === searchInputRef.current || target === document.body
+
+      // Ctrl/Cmd+Enter in the search box: search within the matches (with Shift: hide them instead)
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && target === searchInputRef.current) {
+        e.preventDefault()
+        searchWithin(e.shiftKey)
+        return
+      }
       if (filters.searchMode === 'find' && filters.query && matchingKeys.length > 0 && e.key === 'Enter' && fromSearchOrPage) {
         e.preventDefault()
         if (e.shiftKey) {
@@ -374,7 +390,7 @@ export default function App() {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [filters.searchMode, filters.query, matchingKeys.length, goToNextMatch, goToPreviousMatch])
+  }, [filters.searchMode, filters.query, matchingKeys.length, goToNextMatch, goToPreviousMatch, searchWithin])
   
   useEffect(() => watchSystemScheme(() => setSystemLight(systemPrefersLight())), [])
 
@@ -427,6 +443,7 @@ export default function App() {
       bookmarkContext: 3,
       searchMode: 'find',
       currentMatchIndex: 0,
+      searchSteps: [],
     })
   }
 
@@ -441,6 +458,13 @@ export default function App() {
     { id: 'toggle-patterns', label: centerView === 'patterns' ? 'Show Log Rows' : 'Show Log Patterns', run: () => setCenterView(v => (v === 'patterns' ? 'rows' : 'patterns')) },
     { id: 'toggle-highlight', label: filters.highlightOnly ? 'Disable Highlight Only' : 'Enable Highlight Only', run: () => setFilters(f => ({ ...f, highlightOnly: !f.highlightOnly })) },
     { id: 'clear-filters', label: 'Clear Filters', run: runClearFilters },
+    ...(filters.query.trim() ? [
+      { id: 'search-within', label: 'Search Within Matches', run: () => searchWithin(false) },
+      { id: 'search-without', label: 'Hide Matches and Keep Searching', run: () => searchWithin(true) },
+    ] : []),
+    ...(filters.searchSteps.length > 0 ? [
+      { id: 'clear-steps', label: 'Clear Search Within Steps', run: () => setFilters(f => ({ ...f, searchSteps: [], currentMatchIndex: 0 })) },
+    ] : []),
     { id: 'export-csv', label: 'Export CSV (filtered)', run: runDownloadCsv },
     { id: 'copy-csv', label: 'Copy CSV (filtered)', run: runCopyCsv },
     { id: 'focus-search', label: 'Focus Search (/)', run: () => searchInputRef.current?.focus() },
@@ -665,6 +689,13 @@ export default function App() {
                     onNextMatch={goToNextMatch}
                     onPrevMatch={goToPreviousMatch}
                     entries={entries}
+                    steps={filters.searchSteps}
+                    stepCounts={stepCounts}
+                    totalBeforeSteps={preStepRows.length}
+                    onSearchWithin={searchWithin}
+                    onRemoveStep={(i) => setFilters(f => ({ ...f, searchSteps: f.searchSteps.filter((_, j) => j !== i), currentMatchIndex: 0 }))}
+                    onBackToStep={(i) => setFilters(f => ({ ...f, searchSteps: f.searchSteps.slice(0, i + 1), currentMatchIndex: 0 }))}
+                    onClearSteps={() => setFilters(f => ({ ...f, searchSteps: [], currentMatchIndex: 0 }))}
                     ref={searchInputRef}
                   />
                   <PresetsDropdown onSelect={(pattern) => setFilters(f => ({ ...f, query: pattern, useRegex: true }))} />

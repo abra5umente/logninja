@@ -22,6 +22,13 @@ export interface LogEntry {
   fileName?: string  // Optional for backward compatibility
 }
 
+/** One "search within results" step: only rows matching it carry on (or, with exclude, only rows that don't) */
+export interface SearchStep {
+  query: string
+  useRegex: boolean
+  exclude: boolean
+}
+
 export interface FiltersState {
   selectedLevel: Exclude<LogLevel, 'UNKNOWN'> | null  // Deprecated: kept for backward compatibility
   selectedLevels: LogLevel[] | null
@@ -34,6 +41,8 @@ export interface FiltersState {
   bookmarkContext: number
   searchMode: 'filter' | 'find'  // New: find = jump to matches, filter = show only matches
   currentMatchIndex: number  // New: tracks which match is currently selected in find mode
+  /** Searches pinned with "search within", applied in order before the search box */
+  searchSteps: SearchStep[]
 }
 
 

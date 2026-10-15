@@ -21,6 +21,17 @@ export interface WhatsNewRelease {
 /** Newest first. Add a release at the top to announce it. */
 export const WHATS_NEW: WhatsNewRelease[] = [
   {
+    id: '2026-10-search-within',
+    date: 'october 2026',
+    title: 'search within results',
+    items: [
+      {
+        title: 'search, then search again',
+        body: 'Type a search and hit "search within these" (or Ctrl+Enter) to keep just those rows, then search again inside them. "Hide these" (Ctrl+Shift+Enter) drops the matches instead, handy for clearing out noise. Your steps stack up above the search box with a count for each: click one to go back to it, or × to remove it.',
+      },
+    ],
+  },
+  {
     id: '2026-10-v2',
     date: 'october 2026',
     title: 'logninja v2',

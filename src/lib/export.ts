@@ -1,4 +1,5 @@
 import { FiltersState, LogEntry, LogLevel } from './types'
+import { describeStep } from './search'
 
 function csvEscape(value: string): string {
   const v = value.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
@@ -51,6 +52,7 @@ export function buildMarkdownSummary(rows: LogEntry[], filters: FiltersState, bo
   lines.push('')
   lines.push(`- Total rows: ${total}`)
   lines.push(`- Active levels: ${activeLevels || 'none'}`)
+  if (filters.searchSteps?.length) lines.push(`- Searching within: ${filters.searchSteps.map(describeStep).join(' › ')}`)
   lines.push(`- Search: ${query}`)
   lines.push(`- Time filter: ${timeRange}`)
   lines.push('')
