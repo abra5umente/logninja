@@ -136,7 +136,8 @@ export default function RegexBuilder({ onClose, onApply, initialQuery, initialSa
   }
 
   const onTermKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    // Not while an input method is composing a word: that Enter picks the word
+    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
       // Keep the app's find-mode Enter (next match) from firing too
       e.preventDefault()
       e.stopPropagation()
@@ -328,7 +329,7 @@ export default function RegexBuilder({ onClose, onApply, initialQuery, initialSa
             type="text"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); handleSave(false) } }}
+            onKeyDown={(e) => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) { e.stopPropagation(); handleSave(false) } }}
             placeholder="name this query to save it"
             className="in !w-56"
             aria-label="Query name"

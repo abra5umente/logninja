@@ -99,6 +99,33 @@ describe('templateToRegex', () => {
     expect(re.test(' ERROR db down')).toBe(true)
     expect(re.test(' ERROR db down for maintenance')).toBe(false)
   })
+
+  it("doesn't match a line that only ends the same, or a later line of a message", () => {
+    const re = new RegExp(templateToRegex(templateOf('Connection closed')), 'i')
+    expect(re.test('2026-01-05 10:00:00 INFO Connection closed')).toBe(true)
+    expect(re.test('2026-01-05 10:00:00 INFO Upstream said: Connection closed')).toBe(false)
+    expect(re.test('2026-01-05 10:00:00 ERROR Error occurred\nConnection closed')).toBe(false)
+    const n = new RegExp(templateToRegex(templateOf('42')), 'i')
+    expect(n.test(' INFO 42')).toBe(true)
+    expect(n.test(' INFO took 17')).toBe(false)
+  })
+
+  it('still highlights inside the message cell', () => {
+    const re = new RegExp(templateToRegex(templateOf('request completed in 641ms')), 'i')
+    expect(re.test('request completed in 12ms')).toBe(true)
+  })
+
+  it('matches its own rows when the template was cut short', () => {
+    const msgs = ['x ' + '1 '.repeat(200), 'token ' + 'a1'.repeat(450) + ' accepted']
+    for (const m of msgs) {
+      const tpl = templateOf(m)
+      expect(tpl.endsWith('…')).toBe(true)
+      expect(tpl).not.toMatch(/<[a-z]*…$/)
+      const { re } = buildSearchRegex(templateToRegex(tpl), true)
+      expect(re).not.toBeNull()
+      expect(new RegExp(re!.source, 'i').test(hay(row(m)))).toBe(true)
+    }
+  })
 })
 
 describe('helpers', () => {

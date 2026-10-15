@@ -2,20 +2,22 @@ import React, { useEffect, useMemo, useState } from 'react'
 import { FiltersState, LogEntry } from '../lib/types'
 import { rowsToCSV, csvBlob, buildMarkdownSummary } from '../lib/export'
 import Modal from './Modal'
+import type { TimeMode } from '../lib/timeMode'
 
 interface Props {
   rows: LogEntry[]
   filters: FiltersState
   bookmarked: LogEntry[]
   resetFilters: () => void
+  timeMode: TimeMode
 }
 
-export default function ExportBar({ rows, filters, bookmarked, resetFilters }: Props) {
+export default function ExportBar({ rows, filters, bookmarked, resetFilters, timeMode }: Props) {
   const [mdOpen, setMdOpen] = useState(false)
   const [copyNote, setCopyNote] = useState<string | null>(null)
   // Built only when asked for, not on every render: with a million or more rows the CSV is hundreds of
   // megabytes, and building it on each load or filter change crashed the page
-  const md = useMemo(() => (mdOpen ? buildMarkdownSummary(rows, filters, bookmarked) : ''), [mdOpen, rows, filters, bookmarked])
+  const md = useMemo(() => (mdOpen ? buildMarkdownSummary(rows, filters, bookmarked, timeMode) : ''), [mdOpen, rows, filters, bookmarked, timeMode])
 
   useEffect(() => {
     if (!copyNote) return
@@ -31,7 +33,8 @@ export default function ExportBar({ rows, filters, bookmarked, resetFilters }: P
     document.body.appendChild(a)
     a.click()
     a.remove()
-    URL.revokeObjectURL(url)
+    // Revoking straight after click() can cancel the download in some browsers
+    setTimeout(() => URL.revokeObjectURL(url), 60_000)
   }
 
   const download = (content: string, filename: string, type: string) => downloadBlob(new Blob([content], { type }), filename)
@@ -39,7 +42,7 @@ export default function ExportBar({ rows, filters, bookmarked, resetFilters }: P
   const copyCsv = async () => {
     let csv: string
     try {
-      csv = rowsToCSV(rows, bookmarked)
+      csv = rowsToCSV(rows, bookmarked, timeMode)
     } catch {
       // Too long for one string; export csv still works
       setCopyNote('too big to copy')
@@ -62,7 +65,7 @@ export default function ExportBar({ rows, filters, bookmarked, resetFilters }: P
       <div className="grid grid-cols-2 gap-2">
         <button
           className="btn"
-          onClick={() => downloadBlob(csvBlob(rows, bookmarked), 'logs.csv')}
+          onClick={() => downloadBlob(csvBlob(rows, bookmarked, timeMode), 'logs.csv')}
         >export csv</button>
         <button
           className="btn"

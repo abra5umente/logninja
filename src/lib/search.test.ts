@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { parseLog } from './parse'
 import { addSearchStep, applySearchSteps, buildMatcher, buildSearchRegex, buildStepsMatcher, describeStep } from './search'
 import type { LogEntry, LogLevel, SearchStep } from './types'
 
@@ -84,5 +85,14 @@ describe('search within steps', () => {
 
   it('describes steps for the trail and exports', () => {
     expect(steps.map(describeStep)).toEqual(['db connection', 'error', 'not /time(d )?out/'])
+  })
+})
+
+describe('searching for a time', () => {
+  it('finds a row by the time the table shows as well as the one the log wrote', () => {
+    const [e] = parseLog('1:M 13 Aug 2025 00:00:02.926 * Ready')
+    expect(buildMatcher('2025-08-13 00:00', false)!(e)).toBe(true)
+    expect(buildMatcher('13 Aug 2025', false)!(e)).toBe(true)
+    expect(buildMatcher('2025-08-14', false)!(e)).toBe(false)
   })
 })

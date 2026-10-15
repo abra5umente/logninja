@@ -51,8 +51,11 @@ function stripInlineFlags(s: string): string {
 
 export function termToPattern(term: QueryTerm): string {
   if (term.kind === 'regex') return `(?:${stripInlineFlags(term.value)})`
-  // Escape everything, then turn each run of escaped * back into "anything"
-  return escapeRegExp(term.value).replace(/(?:\\\*)+/g, '.*?')
+  // Escape everything, then turn each run of escaped * back into "anything". Spaces at either end are
+  // written as \x20, because the search box trims its query and would drop them.
+  return escapeRegExp(term.value)
+    .replace(/(?:\\\*)+/g, '.*?')
+    .replace(/^ +| +$/g, ws => '\\x20'.repeat(ws.length))
 }
 
 export function validateTerm(term: QueryTerm): { valid: boolean; error?: string } {
@@ -73,6 +76,11 @@ export function validateTerm(term: QueryTerm): { valid: boolean; error?: string 
     new RegExp(value)
   } catch {
     return { valid: false, error: 'not a valid regex' }
+  }
+  // Terms are combined into one pattern (and repeated in "all" mode), which renumbers groups and
+  // duplicates names, so \1 or \k<name> would point at the wrong group
+  if (/(?:^|[^\\])(?:\\\\)*\\(?:[1-9]|k<)/.test(value) || /\(\?<(?![=!])/.test(value)) {
+    return { valid: false, error: 'backreferences and named groups can’t be combined here' }
   }
   if (
     value.includes('.*.*') ||
