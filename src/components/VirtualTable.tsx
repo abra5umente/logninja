@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSta
 import { LogEntry, FileInfo, entryKey } from '../lib/types'
 import { levelTextClass } from '../lib/levelColors'
 import { formatEntryTime } from '../lib/formatTime'
+import { scrollMap } from '../lib/scrollMap'
 
 interface Props {
   rows: LogEntry[]
@@ -29,6 +30,20 @@ const OVERSCAN = 12
 const DEFAULT_HEIGHT = 600 // px - default panel height (header + rows)
 const MIN_ROW_WIDTH = 640 // px - below this the rows scroll sideways instead of squashing the message column
 
+// Tallest the browser lets an element be, measured once (see lib/scrollMap.ts)
+let maxElementHeight: number | null = null
+function getMaxElementHeight(): number {
+  if (maxElementHeight === null) {
+    const probe = document.createElement('div')
+    probe.style.cssText = 'position:absolute;top:0;left:0;width:1px;height:1000000000px;visibility:hidden'
+    document.body.appendChild(probe)
+    // A little under the cap, so nothing inside the scroller runs past it
+    maxElementHeight = Math.max(1_000_000, probe.offsetHeight - 1000)
+    probe.remove()
+  }
+  return maxElementHeight
+}
+
 // Hover text for the time cell: the log's own text and the moment in UTC
 function timeTitle(entry: LogEntry): string {
   return entry.time ? `${entry.timeStr} (${entry.time.toISOString()} UTC)` : entry.timeStr
@@ -49,6 +64,7 @@ export default function VirtualTable({ rows, height: propHeight, highlightRe = n
   const containerRef = useRef<HTMLDivElement>(null)
   const labelsRef = useRef<HTMLDivElement>(null)
   const [scrollTop, setScrollTop] = useState(0)
+  const [viewH, setViewH] = useState(0)
   const [wrapLines, setWrapLines] = useState(false)
 
   // Create a map of fileId to color for quick lookup
@@ -123,6 +139,11 @@ export default function VirtualTable({ rows, height: propHeight, highlightRe = n
   const rowTop = (i: number) => offsets ? offsets[i] : i * ROW_HEIGHT
   const rowHeightAt = (i: number) => offsets ? offsets[i + 1] - offsets[i] : ROW_HEIGHT
   const totalHeight = offsets ? offsets[rows.length] : rows.length * ROW_HEIGHT
+  // Past about a million rows the scroll range is shorter than the rows; this maps between the two
+  const map = useMemo(() => scrollMap(totalHeight, getMaxElementHeight(), viewH), [totalHeight, viewH])
+  const mapRef = useRef(map)
+  mapRef.current = map
+  const virtualTop = map.toVirtual(scrollTop)
 
   // Scroll to the selected row when the selection changes. In wrap mode the rows around it only get
   // their real heights once rendered, which moves it, so it is re-centred as measurements arrive until
@@ -143,11 +164,13 @@ export default function VirtualTable({ rows, height: propHeight, highlightRe = n
     const top = rowTop(pos)
     const h = rowHeightAt(pos)
     const containerHeight = container.clientHeight
+    const { toVirtual, toPhysical } = mapRef.current
+    const shownTop = toVirtual(container.scrollTop)
 
     // Only scroll if the row is not already fully visible, then centre it
-    if (top < container.scrollTop || top + h > container.scrollTop + containerHeight) {
+    if (top < shownTop || top + h > shownTop + containerHeight) {
       if (target.tries++ >= 5) { scrollTargetRef.current = null; return }
-      const next = Math.max(0, top - (containerHeight / 2) + (h / 2))
+      const next = toPhysical(Math.max(0, top - (containerHeight / 2) + (h / 2)))
       expectedScrollRef.current = next
       container.scrollTop = next
     } else if (!offsets) {
@@ -160,6 +183,7 @@ export default function VirtualTable({ rows, height: propHeight, highlightRe = n
     if (!el) return
     const sync = () => {
       setScrollTop(el.scrollTop)
+      setViewH(el.clientHeight)
       if (labelsRef.current) labelsRef.current.style.transform = `translateX(${-el.scrollLeft}px)`
     }
     const onScroll = () => {
@@ -171,22 +195,24 @@ export default function VirtualTable({ rows, height: propHeight, highlightRe = n
     sync()
     el.addEventListener('scroll', onScroll)
     return () => el.removeEventListener('scroll', onScroll)
-  }, [rows.length]) // Re-run when rows change to ensure listener is attached
+  }, [rows.length, height]) // Re-run when rows change to ensure listener is attached, and on resize to re-read the visible height
 
   const { start, end } = useMemo(() => {
     if (offsets) {
-      const first = rowAt(offsets, scrollTop)
-      const last = rowAt(offsets, scrollTop + height)
+      const first = rowAt(offsets, virtualTop)
+      const last = rowAt(offsets, virtualTop + height)
       return { start: Math.max(0, first - OVERSCAN), end: Math.min(rows.length - 1, last + OVERSCAN) }
     }
-    const startIndex = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN)
+    const startIndex = Math.max(0, Math.floor(virtualTop / ROW_HEIGHT) - OVERSCAN)
     const visibleCount = Math.ceil(height / ROW_HEIGHT) + 2 * OVERSCAN
     return { start: startIndex, end: Math.min(rows.length - 1, startIndex + visibleCount) }
-  }, [scrollTop, rows.length, height, offsets])
+  }, [virtualTop, rows.length, height, offsets])
 
   // Always use virtual scrolling for performance
   const items = rows.slice(start, end + 1)
-  const offsetY = rowTop(start)
+  // Where the first rendered row sits in the scroller: the same as its place in the rows unless the
+  // scroll range is scaled, then relative to the scroll position
+  const offsetY = scrollTop + rowTop(start) - virtualTop
   const gridCols = wrapLines ? 'grid-cols-[24px_50px_200px_90px_minmax(0,1fr)]' : 'grid-cols-[24px_50px_200px_90px_max-content]'
   const msgCellClass = wrapLines ? 'whitespace-pre-wrap break-words' : 'whitespace-nowrap'
 
@@ -293,7 +319,7 @@ export default function VirtualTable({ rows, height: propHeight, highlightRe = n
       ) : (
         <div ref={containerRef} className="relative flex-1 min-h-0 overflow-auto">
           {/* Spacer div to create scrollable area */}
-          <div style={{ height: totalHeight, width: '100%', pointerEvents: 'none' }}></div>
+          <div style={{ height: map.spacer, width: '100%', pointerEvents: 'none' }}></div>
           {/* Absolutely positioned content window that moves with scroll */}
           {/* As wide as the longest rendered row, so row borders and highlights span the whole scroll width */}
           <div style={{ transform: `translateY(${offsetY}px)`, position: 'absolute', top: 0, left: 0, width: wrapLines ? '100%' : 'max-content', minWidth: `max(100%, ${MIN_ROW_WIDTH}px)`, pointerEvents: 'auto' }}>

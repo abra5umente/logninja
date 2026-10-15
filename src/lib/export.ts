@@ -9,23 +9,45 @@ function csvEscape(value: string): string {
   return v
 }
 
-export function rowsToCSV(rows: LogEntry[], bookmarked: LogEntry[] = []): string {
-  const header = ['Time', 'Level', 'Message']
-  const lines = [header.join(',')]
-  for (const r of rows) {
-    const cols = [r.time ? r.time.toISOString() : r.timeStr, r.level, r.message]
-    lines.push(cols.map(c => csvEscape(c ?? '')).join(','))
+// Rows per CSV piece. A million long rows add up to more text than a browser allows in one string
+// (about 512 MB in Chrome), so a download is built from pieces instead.
+const CSV_CHUNK_ROWS = 10000
+
+/** The CSV in pieces that join (with no separator) into the whole file */
+export function rowsToCSVChunks(rows: LogEntry[], bookmarked: LogEntry[] = []): string[] {
+  const chunks: string[] = []
+  let lines: string[] = []
+  const flush = () => {
+    if (lines.length === 0) return
+    chunks.push((chunks.length > 0 ? '\n' : '') + lines.join('\n'))
+    lines = []
   }
+  const add = (line: string) => {
+    lines.push(line)
+    if (lines.length >= CSV_CHUNK_ROWS) flush()
+  }
+  const header = ['Time', 'Level', 'Message'].join(',')
+  const row = (r: LogEntry) => [r.time ? r.time.toISOString() : r.timeStr, r.level, r.message].map(c => csvEscape(c ?? '')).join(',')
+  add(header)
+  for (const r of rows) add(row(r))
   if (bookmarked.length > 0) {
-    lines.push('')
-    lines.push('Bookmarked Lines')
-    lines.push(header.join(','))
-    for (const r of bookmarked) {
-      const cols = [r.time ? r.time.toISOString() : r.timeStr, r.level, r.message]
-      lines.push(cols.map(c => csvEscape(c ?? '')).join(','))
-    }
+    add('')
+    add('Bookmarked Lines')
+    add(header)
+    for (const r of bookmarked) add(row(r))
   }
-  return lines.join('\n')
+  flush()
+  return chunks
+}
+
+/** The CSV as one string. Throws a RangeError when it is too long for one string; csvBlob never does. */
+export function rowsToCSV(rows: LogEntry[], bookmarked: LogEntry[] = []): string {
+  return rowsToCSVChunks(rows, bookmarked).join('')
+}
+
+/** The CSV as a file to download, built from pieces so any number of rows fits */
+export function csvBlob(rows: LogEntry[], bookmarked: LogEntry[] = []): Blob {
+  return new Blob(rowsToCSVChunks(rows, bookmarked), { type: 'text/csv;charset=utf-8' })
 }
 
 export function buildMarkdownSummary(rows: LogEntry[], filters: FiltersState, bookmarked: LogEntry[] = []) {

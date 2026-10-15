@@ -317,3 +317,20 @@ describe('parseLog: Airlock server logs', () => {
     expect(entries.map(e => e.message)).toEqual(['=====[ cleanupdb]=====', 'done.', 'started\n  continuation'])
   })
 })
+
+describe('parseLog line cap', () => {
+  const line = '2026-01-01 00:00:00 INFO hello\n'
+  const truncated = (entries: { message: string }[]) => entries.some(e => e.message.startsWith('File truncated'))
+
+  it('does not call a file of exactly a million lines truncated because of its final line break', () => {
+    const entries = parseLog(line.repeat(1_000_000))
+    expect(entries).toHaveLength(1_000_000)
+    expect(truncated(entries)).toBe(false)
+  })
+
+  it('notes when lines past the million were dropped', () => {
+    const entries = parseLog(line.repeat(1_000_001))
+    expect(entries).toHaveLength(1_000_001)
+    expect(entries[entries.length - 1].message).toBe('File truncated: showing first 1,000,000 lines of 1,000,001 total lines')
+  })
+})

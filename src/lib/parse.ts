@@ -168,6 +168,8 @@ const MONTHS = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov
 
 export function parseLog(text: string, fileId: string = '', fileName: string = ''): LogEntry[] {
   const lines = text.replace(/\r\n?/g, '\n').split('\n')
+  // A file that ends with a line break splits into one more, empty, "line"; it isn't one
+  if (lines.length > 1 && lines[lines.length - 1] === '') lines.pop()
   const out: LogEntry[] = []
   let lastEntry: LogEntry | null = null
   let index = 0

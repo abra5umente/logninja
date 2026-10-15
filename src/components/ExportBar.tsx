@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { FiltersState, LogEntry } from '../lib/types'
-import { rowsToCSV, buildMarkdownSummary } from '../lib/export'
+import { rowsToCSV, csvBlob, buildMarkdownSummary } from '../lib/export'
 import Modal from './Modal'
 
 interface Props {
@@ -12,11 +12,18 @@ interface Props {
 
 export default function ExportBar({ rows, filters, bookmarked, resetFilters }: Props) {
   const [mdOpen, setMdOpen] = useState(false)
-  const csv = useMemo(() => rowsToCSV(rows, bookmarked), [rows, bookmarked])
-  const md = useMemo(() => buildMarkdownSummary(rows, filters, bookmarked), [rows, filters, bookmarked])
+  const [copyNote, setCopyNote] = useState<string | null>(null)
+  // Built only when asked for, not on every render: with a million or more rows the CSV is hundreds of
+  // megabytes, and building it on each load or filter change crashed the page
+  const md = useMemo(() => (mdOpen ? buildMarkdownSummary(rows, filters, bookmarked) : ''), [mdOpen, rows, filters, bookmarked])
 
-  const download = (content: string, filename: string, type: string) => {
-    const blob = new Blob([content], { type })
+  useEffect(() => {
+    if (!copyNote) return
+    const t = setTimeout(() => setCopyNote(null), 2000)
+    return () => clearTimeout(t)
+  }, [copyNote])
+
+  const downloadBlob = (blob: Blob, filename: string) => {
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
@@ -25,6 +32,20 @@ export default function ExportBar({ rows, filters, bookmarked, resetFilters }: P
     a.click()
     a.remove()
     URL.revokeObjectURL(url)
+  }
+
+  const download = (content: string, filename: string, type: string) => downloadBlob(new Blob([content], { type }), filename)
+
+  const copyCsv = async () => {
+    let csv: string
+    try {
+      csv = rowsToCSV(rows, bookmarked)
+    } catch {
+      // Too long for one string; export csv still works
+      setCopyNote('too big to copy')
+      return
+    }
+    setCopyNote((await copy(csv)) ? 'copied' : 'copy failed')
   }
 
   const copy = async (text: string) => {
@@ -41,13 +62,13 @@ export default function ExportBar({ rows, filters, bookmarked, resetFilters }: P
       <div className="grid grid-cols-2 gap-2">
         <button
           className="btn"
-          onClick={() => download(csv, 'logs.csv', 'text/csv;charset=utf-8')}
+          onClick={() => downloadBlob(csvBlob(rows, bookmarked), 'logs.csv')}
         >export csv</button>
         <button
           className="btn"
-          onClick={async () => { await copy(csv) }}
+          onClick={copyCsv}
           title="Copy CSV to clipboard"
-        >copy csv</button>
+        >{copyNote ?? 'copy csv'}</button>
         <button
           className="btn"
           onClick={() => setMdOpen(true)}

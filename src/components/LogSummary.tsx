@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useMemo } from 'react'
 import { LogEntry, LogLevel } from '../lib/types'
 import GroupHeading from './GroupHeading'
 import { meter } from '../lib/meter'
@@ -10,37 +10,30 @@ interface Props {
   loadTime: number
 }
 
+// Big counts shortened so they fit their box (1,600,000 -> 1.6M); the box's hover shows the full number
+function shortCount(n: number): string {
+  return n >= 1_000_000 ? n.toLocaleString(undefined, { notation: 'compact', maximumFractionDigits: 1 }) : n.toLocaleString()
+}
+
 export default function LogSummary({ entries, fileName, loadTime }: Props) {
-  if (entries.length === 0) return null
-
-  // Performance optimization: limit processing for extremely large datasets
-  const maxEntriesForSummary = 1000000 // 1 million entries max
-  const entriesToProcess = entries.length > maxEntriesForSummary ? entries.slice(0, maxEntriesForSummary) : entries
-
-  // Calculate level counts
-  const levelCounts = entriesToProcess.reduce((acc, entry) => {
-    acc[entry.level] = (acc[entry.level] || 0) + 1
-    return acc
-  }, {} as Record<LogLevel, number>)
-
-  // Calculate time range efficiently for large datasets
-  let minTime = Infinity
-  let maxTime = -Infinity
-  let hasTimestamps = false
-  
-  for (const entry of entriesToProcess) {
-    if (entry.time) {
-      const time = entry.time.getTime()
-      minTime = Math.min(minTime, time)
-      maxTime = Math.max(maxTime, time)
-      hasTimestamps = true
+  // One pass over every entry: level counts and the time range
+  const { levelCounts, timeRange } = useMemo(() => {
+    const levelCounts = {} as Record<LogLevel, number>
+    let minTime = Infinity
+    let maxTime = -Infinity
+    for (const entry of entries) {
+      levelCounts[entry.level] = (levelCounts[entry.level] || 0) + 1
+      if (entry.time) {
+        const time = entry.time.getTime()
+        if (time < minTime) minTime = time
+        if (time > maxTime) maxTime = time
+      }
     }
-  }
-  
-  const timeRange = hasTimestamps ? {
-    start: new Date(minTime),
-    end: new Date(maxTime)
-  } : null
+    const timeRange = minTime <= maxTime ? { start: new Date(minTime), end: new Date(maxTime) } : null
+    return { levelCounts, timeRange }
+  }, [entries])
+
+  if (entries.length === 0) return null
 
   // Format time range
   const formatTimeRange = () => {
@@ -67,18 +60,18 @@ export default function LogSummary({ entries, fileName, loadTime }: Props) {
   }
 
   const levels = (['ERROR', 'WARN', 'INFO', 'DEBUG', 'TRACE', 'UNKNOWN'] as LogLevel[]).filter(l => (levelCounts[l] || 0) > 0)
-  const counted = entriesToProcess.length
+  const counted = entries.length
 
   return (
     <section className="glass card">
       <GroupHeading title="log summary" />
       <div className="stats mb-3">
-        <div className="stat">
-          <div className="num">{entries.length.toLocaleString()}</div>
+        <div className="stat" title={`${entries.length.toLocaleString()} lines`}>
+          <div className="num">{shortCount(entries.length)}</div>
           <div className="lbl">lines</div>
         </div>
-        <div className={`stat ${(levelCounts.ERROR || 0) > 0 ? 'hl' : ''}`}>
-          <div className="num">{(levelCounts.ERROR || 0).toLocaleString()}</div>
+        <div className={`stat ${(levelCounts.ERROR || 0) > 0 ? 'hl' : ''}`} title={`${(levelCounts.ERROR || 0).toLocaleString()} errors`}>
+          <div className="num">{shortCount(levelCounts.ERROR || 0)}</div>
           <div className="lbl">errors</div>
         </div>
         {timeRange && (
@@ -88,12 +81,6 @@ export default function LogSummary({ entries, fileName, loadTime }: Props) {
           </div>
         )}
       </div>
-
-      {entries.length > maxEntriesForSummary && (
-        <div className="text-[11px] text-yellow mb-2">
-          summary based on the first {maxEntriesForSummary.toLocaleString()} lines
-        </div>
-      )}
 
       {/* Level breakdown as ASCII meters */}
       <div className="flex flex-col gap-0.5 text-xs">

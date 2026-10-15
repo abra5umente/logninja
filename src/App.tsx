@@ -14,7 +14,7 @@ import { addSearchStep, applySearchSteps, buildMatcher, buildSearchRegex, buildS
 import { nextLevelSelection } from './lib/levelSelection'
 import ExportBar from './components/ExportBar'
 import CommandPalette, { CommandItem } from './components/CommandPalette'
-import { rowsToCSV } from './lib/export'
+import { rowsToCSV, csvBlob } from './lib/export'
 import { AIRLOCK_FIELDS, extractAirlockSummary, isAirlockDebugFileName } from './lib/airlockSummary'
 import AirlockSummary from './components/AirlockSummary'
 import LogSummary from './components/LogSummary'
@@ -413,9 +413,7 @@ export default function App() {
   const closeSkippedNotice = useCallback(() => setSkippedFiles([]), [])
 
   const runDownloadCsv = () => {
-    const csv = rowsToCSV(filtered)
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
+    const url = URL.createObjectURL(csvBlob(filtered))
     const a = document.createElement('a')
     a.href = url
     a.download = 'logs.csv'
@@ -426,8 +424,8 @@ export default function App() {
   }
 
   const runCopyCsv = async () => {
-    const csv = rowsToCSV(filtered)
-    try { await navigator.clipboard.writeText(csv) } catch {}
+    // rowsToCSV throws when the rows are too much text for one string; export still works then
+    try { await navigator.clipboard.writeText(rowsToCSV(filtered)) } catch {}
   }
 
   const runClearFilters = () => {

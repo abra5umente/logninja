@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { buildMarkdownSummary } from './export'
-import { FiltersState } from './types'
+import { buildMarkdownSummary, rowsToCSV, rowsToCSVChunks } from './export'
+import { FiltersState, LogEntry } from './types'
 
 const filters: FiltersState = {
   selectedLevel: null,
@@ -33,5 +33,25 @@ describe('buildMarkdownSummary', () => {
     ]
     expect(buildMarkdownSummary([], { ...filters, searchSteps: steps })).toContain('- Searching within: error › not /time(d )?out/')
     expect(buildMarkdownSummary([], filters)).not.toContain('Searching within')
+  })
+})
+
+describe('rowsToCSVChunks', () => {
+  const row = (i: number): LogEntry => ({ index: i, line: i + 1, time: null, timeStr: `t${i}`, level: 'INFO', source: '', message: `msg, ${i}`, raw: '' })
+
+  it('splits a big export into pieces that join into the whole CSV', () => {
+    const rows = Array.from({ length: 25_000 }, (_, i) => row(i))
+    const chunks = rowsToCSVChunks(rows, [row(7)])
+    expect(chunks.length).toBe(3)
+    const lines = chunks.join('').split('\n')
+    expect(lines[0]).toBe('Time,Level,Message')
+    expect(lines[1]).toBe('t0,INFO,"msg, 0"')
+    expect(lines[25_000]).toBe('t24999,INFO,"msg, 24999"')
+    expect(lines.slice(25_001)).toEqual(['', 'Bookmarked Lines', 'Time,Level,Message', 't7,INFO,"msg, 7"'])
+  })
+
+  it('gives one piece for a small export', () => {
+    expect(rowsToCSVChunks([row(0)])).toEqual(['Time,Level,Message\nt0,INFO,"msg, 0"'])
+    expect(rowsToCSV([])).toBe('Time,Level,Message')
   })
 })
