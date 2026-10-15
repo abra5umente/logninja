@@ -14,7 +14,7 @@ A fast, client‑side log viewer built with Vite + React + TypeScript. Drag and 
 - **What's new**: a short popup lists new features once per release (remembered in your browser only, nothing is sent anywhere); reopen it from settings or the command palette
 
 ### Log Viewing
-- **High-performance virtual scrolling**: Handles very large logs smoothly (up to a million lines per file)
+- **High-performance virtual scrolling**: Handles very large logs smoothly (up to a million lines per file, several million across files)
   - True infinite scrolling (no pagination)
   - Dynamic line wrapping with auto-height rows
   - **Wrap toggle**: Switch between single-line (horizontal scroll) and multi-line (auto-wrap) views
@@ -68,7 +68,7 @@ A fast, client‑side log viewer built with Vite + React + TypeScript. Drag and 
 - Bookmarks: star lines and export them (CSV/Markdown includes "Bookmarked Lines")
   - **Bookmark-only view**: Show only bookmarked lines with configurable context (±1, 3, 5, or 10 lines), within the current level, file and time filters
 - Export to CSV or Markdown
-- Copy all filtered entries to the clipboard as CSV
+- Copy all filtered entries to the clipboard as CSV (very large exports are download-only)
 
 ### Special Features
 - **Airlock summary**: Auto-detected for Airlock Digital logs (modal with 71 fields grouped into Agent, Host, Server connection, Policy and Executions; Windows, Linux and macOS agents, including 7.x debug logs from all three). Click a value to search the log for the lines behind it
