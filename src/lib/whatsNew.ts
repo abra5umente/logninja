@@ -21,13 +21,25 @@ export interface WhatsNewRelease {
 /** Newest first. Add a release at the top to announce it. */
 export const WHATS_NEW: WhatsNewRelease[] = [
   {
-    id: '2026-10-search-within',
-    date: 'october 2026',
-    title: 'search within results',
+    id: '2026-10-15',
+    date: '15 october 2026',
+    title: 'logninja',
     items: [
       {
         title: 'search, then search again',
         body: 'Type a search and hit "search within these" (or Ctrl+Enter) to keep just those rows, then search again inside them. "Hide these" (Ctrl+Shift+Enter) drops the matches instead, handy for clearing out noise. Your steps stack up above the search box with a count for each: click one to go back to it, or × to remove it.',
+      },
+      {
+        title: 'your time or the log\'s',
+        body: 'A "local / as logged" switch above the table shows times in your own time zone or on the clock each line was written in. The timeline, search, time range and exports all follow it.',
+      },
+      {
+        title: 'really big logs',
+        body: 'Logs with more than a million lines no longer blank the page, and you can scroll all the way to the bottom of them. Exports of any size download fine.',
+      },
+      {
+        title: 'smaller fixes',
+        body: 'Clicking a pattern shows only its own rows. Clicking a value in the airlock summary filters the table to its lines. Messages that mention a level word partway through keep all their text, and more log styles get the right level and time. CSV exports open safely in spreadsheets.',
       },
     ],
   },
