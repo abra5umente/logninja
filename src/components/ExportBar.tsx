@@ -31,7 +31,8 @@ export default function ExportBar({ rows, filters, bookmarked, resetFilters }: P
     document.body.appendChild(a)
     a.click()
     a.remove()
-    URL.revokeObjectURL(url)
+    // Revoking straight after click() can cancel the download in some browsers
+    setTimeout(() => URL.revokeObjectURL(url), 60_000)
   }
 
   const download = (content: string, filename: string, type: string) => downloadBlob(new Blob([content], { type }), filename)

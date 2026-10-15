@@ -44,15 +44,24 @@ function maskVariable(m: string, url?: string, email?: string, uuid?: string, ti
   return m
 }
 
+// The trimmed first line of a message. A long one is cut to one character past what maskLine
+// reads, so maskLine can tell it was cut.
 function firstLine(message: string): string {
   const nl = message.indexOf('\n')
   const line = (nl >= 0 ? message.slice(0, nl) : message).trim()
-  return line.length > MAX_TEMPLATE * 2 ? line.slice(0, MAX_TEMPLATE * 2) : line
+  return line.length > MAX_TEMPLATE * 2 ? line.slice(0, MAX_TEMPLATE * 2 + 1) : line
 }
 
+// A cut template ends in "…", so its search matches rows that start the same rather than ending there
 function maskLine(line: string): string {
-  const t = line.replace(VARIABLE_RE, maskVariable)
-  return t.length > MAX_TEMPLATE ? t.slice(0, MAX_TEMPLATE) + '…' : t
+  let cut = line.length > MAX_TEMPLATE * 2
+  let t = (cut ? line.slice(0, MAX_TEMPLATE * 2) : line).replace(VARIABLE_RE, maskVariable)
+  if (t.length > MAX_TEMPLATE) {
+    // Don't leave half a placeholder ("<n") at the end: it would be searched for as text
+    t = t.slice(0, MAX_TEMPLATE).replace(/<[a-z]*$/, '')
+    cut = true
+  }
+  return cut ? t + '…' : t
 }
 
 export function templateOf(message: string): string {
@@ -90,17 +99,19 @@ const PLACEHOLDER_RE: Record<Placeholder, string> = {
 }
 
 // A regex (for the search box) matching the rows of a pattern. Search runs against
-// "time level message", so it is anchored to a space before and to the end of the first line.
+// "time level message", so it is anchored to the start of the message (just after the level, or
+// the start of the message cell when highlighting) and to the end of its first line.
+const MESSAGE_START = String.raw`(?:^|(?<=(?:ERROR|WARN|INFO|DEBUG|TRACE|UNKNOWN) ))\s*`
 export function templateToRegex(template: string): string {
   const truncated = template.endsWith('…')
   const body = templateParts(truncated ? template.slice(0, -1) : template)
     .map(p => (p.placeholder ? PLACEHOLDER_RE[p.text as Placeholder] : escapeRe(p.text)))
     .join('')
-  let re = String.raw`(?:^|\s)` + body
-  if (!truncated) re += String.raw`\s*(?=\n|$)`
+  let re = MESSAGE_START + body
+  if (!truncated) re += String.raw`[^\S\n]*(?=\n|$)`
   // the search box refuses patterns over 1000 characters: keep the start, drop the anchor
   if (re.length > 990) {
-    re = String.raw`(?:^|\s)`
+    re = MESSAGE_START
     for (const p of templateParts(template)) {
       const piece = p.placeholder ? PLACEHOLDER_RE[p.text as Placeholder] : escapeRe(p.text)
       if (re.length + piece.length > 990) break

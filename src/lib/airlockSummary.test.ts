@@ -699,3 +699,48 @@ describe('extractAirlockSummary: other logs', () => {
     expect(s['Blocked Browser Extensions']).toBe('—')
   })
 })
+
+describe('extractAirlockSummary: fixes from a bug hunt', () => {
+  const hits = (log: string[], key: (typeof AIRLOCK_FIELDS)[number]) => {
+    const s = extractAirlockSummary(log.join('\n'))
+    const rows = parseLog(log.join('\n')).map(e => `${e.timeStr} ${e.level} ${e.message}`)
+    const token = getAirlockFieldSearchString(key, s)
+    const { re } = buildSearchRegex(token, /[.*+?^${}()|[\]\\]/.test(token))
+    return { value: s[key], hits: re ? rows.filter(r => new RegExp(re.source, 'i').test(r)).length : 0 }
+  }
+
+  it('finds Windows debug lines written with 24-hour times', () => {
+    const log = ['13/01/2026 14:00:00\tINFO\t1\tStarting Airlock Digital Client on Windows 11 x64', '13/01/2026 14:00:01\tDEBUG\t1\tScanHash result: 5', '13/01/2026 14:00:02\tDEBUG\t1\tScanHash result: 6']
+    expect(hits(log, 'Debug Logging').hits).toBe(2)
+  })
+
+  it('uses the Windows searches for a rotated Windows log with no start line', () => {
+    const log = [w('9:00:00 AM', 'INFO', 1, 'Local IP: 10.0.0.21'), w('9:00:01 AM', 'INFO', 1, 'Airlock Digital - Closed!')]
+    expect(hits(log, 'Agent Stops').hits).toBe(1)
+    expect(hits(log, 'Local IP Address').hits).toBe(1)
+  })
+
+  it('finds Linux debug lines without the "Debug Logging is" line', () => {
+    const log = ['2026-01-05 10:02:01 DEBUG Username - tester = 1001', '2026-01-05 10:02:01 DEBUG GetMode: [AUDIT]']
+    expect(hits(log, 'Debug Logging').hits).toBe(2)
+  })
+
+  it('only counts errors in the level column, once each', () => {
+    const log = ['2026-01-05 10:00:02 ERROR [/build/a.go:10] boom', '2026-01-05 10:00:03 INFO  Retrying after error [timeout]', '2026-01-05 10:00:04 ERROR ERROR: twice']
+    const r = hits(log, 'Errors and Warnings')
+    expect(r.value).toBe('2 errors, 0 warnings')
+    expect(r.hits).toBe(2)
+  })
+
+  it('reads the primary server, skipping the fallback', () => {
+    const s = (lines: string[]) => extractAirlockSummary(lines.join('\n'))['Primary Airlock Server']
+    const fb = '2026-01-05 10:00:01 INFO  Configuration ~ Primary Airlock Server ~ 10.0.0.9 (fallback)'
+    expect(s([fb, '2026-01-05 10:00:02 INFO  Configuration ~ Primary Airlock Server ~ airlock.example'])).toBe('airlock.example')
+    expect(s([fb])).toBe('—')
+    expect(s(['2026-01-05 10:00:01 INFO  Configuration ~ Primary Airlock Server ~ ', fb])).toBe('—')
+  })
+
+  it('reads "Proxy configured: false" as no', () => {
+    expect(extractAirlockSummary('2026-01-05 10:00:05 INFO  Proxy configured: false')['Proxy Configured']).toBe('No')
+  })
+})

@@ -18,6 +18,16 @@ const filters: FiltersState = {
 }
 
 describe('buildMarkdownSummary', () => {
+  it('says when the search only highlights', () => {
+    expect(buildMarkdownSummary([], { ...filters, query: 'boom' })).toContain('- Search: text: boom (highlighted, not filtered)')
+    expect(buildMarkdownSummary([], { ...filters, query: 'boom', searchMode: 'filter' })).toContain('- Search: text: boom\n')
+  })
+
+  it('keeps a multi-line message inside its list item', () => {
+    const row = { index: 0, line: 1, time: null, timeStr: '', level: 'ERROR', source: '', message: 'Exception\nat foo', raw: '' } as LogEntry
+    expect(buildMarkdownSummary([row], filters)).toContain('- 1 × Exception\n  at foo')
+  })
+
   it('says all levels when none are picked', () => {
     expect(buildMarkdownSummary([], filters)).toContain('- Active levels: all')
   })

@@ -3,8 +3,8 @@ import { LogEntry, LogLevel } from './types'
 // Timestamp patterns
 // ISO 8601; without a zone (Z or an offset) it is read as local time
 const reISO = /^(\s*)(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:[.,]\d+)?(?:Z|[+-]\d{2}:?\d{2})?)/
-// YYYY-MM-DD HH:mm:ss(.SSS or ,SSS)
-const reYMD_HMS = /^(\s*)(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:[.,]\d+)?)/
+// YYYY-MM-DD HH:mm:ss(.SSS or ,SSS), with an optional zone straight after (Z, +1100, +11:00)
+const reYMD_HMS = /^(\s*)(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:[.,]\d+)?(?:Z|[+-]\d{2}:?\d{2})?)/
 // YYYY/MM/DD HH:mm:ss(.SSS or ,SSS)
 const reYMD_SLASH_HMS = /^(\s*)(\d{4}\/\d{2}\/\d{2} \d{2}:\d{2}:\d{2}(?:[.,]\d+)?)/
 // Support dd/MM/yyyy HH:mm:ss with optional fractional (dot or comma) and optional AM/PM suffix
@@ -27,6 +27,7 @@ const levelMap: Record<string, LogLevel> = {
 }
 
 const reLevel = /(\[)?\b(ERROR|ERR|WARN|WARNING|INFO|DEBUG|TRACE)\b(\])?/i
+const reLevelAll = new RegExp(reLevel.source, 'gi')
 
 type SlashOrder = 'DMY' | 'MDY' | null
 
@@ -35,12 +36,6 @@ function parseDate(ts: string, slashOrder: SlashOrder = null): Date | null {
   if (/^\d{4}-\d{2}-\d{2}T/.test(ts)) {
     // Offsets may come without a colon (+1000), which Date does not accept everywhere
     const d = new Date(ts.replace(',', '.').replace(/([+-]\d{2})(\d{2})$/, '$1:$2'))
-    return isNaN(d.getTime()) ? null : d
-  }
-  // YYYY-MM-DD HH:mm:ss(.SSS)?
-  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/.test(ts)) {
-    const isoLike = ts.replace(' ', 'T').replace(',', '.')
-    const d = new Date(isoLike)
     return isNaN(d.getTime()) ? null : d
   }
   // YYYY/MM/DD HH:mm:ss(.SSS)?
@@ -64,6 +59,14 @@ function parseDate(ts: string, slashOrder: SlashOrder = null): Date | null {
       const d = new Date(yyyy, mm - 1, dd, HH, MM, SS, ms)
       return isNaN(d.getTime()) ? null : d
     }
+  }
+  // YYYY-MM-DD HH:mm:ss(.SSS)? with an optional zone. After the MSI form above, which this would also match.
+  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/.test(ts)) {
+    let isoLike = ts.replace(' ', 'T').replace(',', '.')
+    // An offset without a colon (+1100), which Date does not accept everywhere
+    if (/[+-]\d{4}$/.test(isoLike)) isoLike = isoLike.slice(0, -2) + ':' + isoLike.slice(-2)
+    const d = new Date(isoLike)
+    return isNaN(d.getTime()) ? null : d
   }
   // dd/MM/yyyy HH:mm:ss(.SSS)? with optional AM/PM
   if (/^\d{1,2}\/\d{1,2}\/\d{4} \d{1,2}:\d{2}:\d{2}/i.test(ts)) {
@@ -118,33 +121,44 @@ function parseDate(ts: string, slashOrder: SlashOrder = null): Date | null {
   return null
 }
 
-function detectTimestamp(s: string, slashOrder: SlashOrder = null): { tsStr: string; date: Date | null; rest: string } | null {
+function detectTimestamp(s: string, slashOrder: SlashOrder = null): { tsStr: string; date: Date | null; rest: string; redis: boolean } | null {
   for (const re of [reISO, reYMD_HMS, reYMD_SLASH_HMS, reDMY_HMS, reMDY_HMS, reDMON_HMS, reREDIS_PREFIX_DMON_HMS] as const) {
     const m = s.match(re)
     if (m) {
       const tsStr = m[2]
       const rest = s.slice(m[0].length).trimStart()
-      return { tsStr, date: parseDate(tsStr, slashOrder), rest }
+      return { tsStr, date: parseDate(tsStr, slashOrder), rest, redis: re === reDMON_HMS || re === reREDIS_PREFIX_DMON_HMS }
     }
   }
   return null
 }
 
-function detectLevel(s: string): { level: LogLevel; idx: number; len: number } | null {
-  // Redis severity symbols at start: '.' debug, '-' verbose/trace, '*' notice/info, '#' warning
-  const sym = s.match(/^\s*([.*#-])\s/)
+// The level column after a timestamp, or null when there isn't one. redis: the line has a Redis-style
+// time, whose level is a symbol. A level word only counts as the column when it is in capitals, in
+// brackets or the first thing after the time; a word further in ("retrying after error",
+// "/usr/share/info") is part of the message, and the text before it must not be cut off.
+function detectLevel(s: string, redis = false): { level: LogLevel; idx: number; len: number } | null {
+  // Redis severity symbols at start: '.' debug, '-' verbose/trace, '*' notice/info, '#' warning.
+  // Only for Redis lines: elsewhere "- " is just a separator, as in "2026-01-05 10:00:00 - app - ERROR - ..."
+  const sym = redis ? s.match(/^\s*([.*#-])\s/) : null
   if (sym) {
     const ch = sym[1]
     const map: Record<string, LogLevel> = { '.': 'DEBUG', '-': 'TRACE', '*': 'INFO', '#': 'WARN' }
     const level = map[ch] ?? 'INFO'
     return { level, idx: sym.index ?? 0, len: sym[0].length }
   }
-  const m = s.match(reLevel)
+  // Usually the first level word is the column; only look further when it isn't
+  let m = s.match(reLevel)
+  if (m && !isLevelColumn(m)) {
+    reLevelAll.lastIndex = (m.index ?? 0) + m[0].length
+    while ((m = reLevelAll.exec(s)) && !isLevelColumn(m)) { /* keep looking */ }
+  }
   if (!m) return null
-  const level = levelMap[m[2].toUpperCase()] ?? 'UNKNOWN'
-  const idx = m.index ?? 0
-  const len = m[0].length
-  return { level, idx, len }
+  return { level: levelMap[m[2].toUpperCase()] ?? 'UNKNOWN', idx: m.index ?? 0, len: m[0].length }
+}
+
+function isLevelColumn(m: RegExpMatchArray): boolean {
+  return m.index === 0 || m[2] === m[2].toUpperCase() || !!(m[1] && m[3])
 }
 
 // Level for formats that have no level column. Does not consume anything, so the message stays whole.
@@ -471,11 +485,10 @@ export function parseLog(text: string, fileId: string = '', fileName: string = '
       continue
     }
 
-    // Default to INFO when no explicit level token is present so entries remain visible
-    const levelInfo = detectLevel(ts.rest) || { level: 'INFO' as LogLevel, idx: 0, len: 0 }
-    const afterLevel = ts.rest
-    // Source extraction removed; message is whatever follows the level token
-    const message = afterLevel.slice(levelInfo.idx + levelInfo.len).replace(/^[\s:,-]+/, '')
+    // The message is whatever follows the level column. Without one the whole rest is the message,
+    // and its level comes from words like "error" in it (INFO when there are none).
+    const levelInfo = detectLevel(ts.rest, ts.redis) || { level: looseLevel(ts.rest), idx: 0, len: 0 }
+    const message = ts.rest.slice(levelInfo.idx + levelInfo.len).replace(/^[\s:,-]+/, '')
 
     const entry: LogEntry = {
       index: index++,

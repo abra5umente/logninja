@@ -369,13 +369,13 @@ function collectAgentStats(lines: string[]) {
     else if (/^Unprotected\. Allowed Signal \d+: .*AirlockEnforcementAgentCore$/.test(msg)) s.stops += 1
     else if ((mm = msg.match(/^ERROR: es_new_client\(\) failed with (\d+)/))) {
       s.platform = 'macos'
-      s.errors += 1
+      if (kind !== 'ERROR') s.errors += 1 // an ERROR row was counted above
       s.esFailures += 1
       s.esFailCode = mm[1]
       s.esFailTs = ts
       s.esChecking = false
     }
-    else if (msg.startsWith('ERROR: ')) s.errors += 1
+    else if (msg.startsWith('ERROR: ') && kind !== 'ERROR') s.errors += 1
     // Self-protection, e.g. "Prevented Change Dir to: /Library/Airlock Digital"
     else if ((mm = msg.match(/^Prevented (.+?)\s*$/))) bump(s.prevented, mm[1])
     else if (msg.includes('Setting to Safe Mode')) s.safeModeAt.push(ts)
@@ -690,20 +690,21 @@ export function extractAirlockSummary(text: string): Record<(typeof AIRLOCK_FIEL
         // Handle explicit negative: "Proxy not configured"
         const neg = lines.find(l => /proxy\s+not\s+configured/i.test(l))
         if (neg) return 'No'
-        const m = findFirst(lines, [
-          /proxy\s+configured/i,
-          /proxy.*?(configured|enabled)[:=\s]+(true|false|yes|no|on|off)/i,
-        ])
-        if (!m) return null
-        if (/proxy\s+configured/i.test(m[0])) return 'Yes'
-        return String(normalizeBool((m[2] as any) || (m[1] as any)))
+        // A stated value ("Proxy configured: false") wins over the bare "Proxy configured"
+        const v = findFirst(lines, [/proxy.*?(configured|enabled)[:=\s]+(true|false|yes|no|on|off)\b/i])
+        if (v) return String(normalizeBool(v[2] as any))
+        return lines.some(l => /proxy\s+configured/i.test(l)) ? 'Yes' : null
       }
       case 'Primary Airlock Server': {
         // Prefer Configuration ~ Primary Airlock Server ~ <value>
-        const m1 = lines.find(l => /Configuration\s*~\s*Primary\s*Airlock\s*Server\s*~\s*/i.test(l))
-        if (m1) {
-          const mm = m1.match(/Primary\s*Airlock\s*Server\s*~\s*([^\s]+)(?:\s+\(fallback\))?/i)
-          if (mm) return mm[1]
+        // The first one with a value that isn't marked as the fallback
+        const tilde = lines.filter(l => /Configuration\s*~\s*Primary\s*Airlock\s*Server\s*~/i.test(l))
+        if (tilde.length > 0) {
+          for (const l of tilde) {
+            const mm = l.match(/Primary\s*Airlock\s*Server\s*~\s*([^\s~]+)(\s+\(fallback\))?/i)
+            if (mm && !mm[2]) return mm[1]
+          }
+          return null
         }
         const m = findFirst(lines, [
           /(primary\s*airlock\s*server|primary\s*server|server\s*(?:url|host))[:=\s]+([^\s,;]+)/i,
@@ -838,7 +839,7 @@ export function extractAirlockSummary(text: string): Record<(typeof AIRLOCK_FIEL
       case 'Assembly Reflection Enabled': {
         if (stats.reflection.length > 0) return latestOf(stats.reflection)
         const m = findFirst(lines, [
-          /assembly\s*reflection.*?(enabled|disabled|on|off|true|false)/i,
+          /assembly\s*reflection.*?\b(enabled|disabled|on|off|true|false)\b/i,
           /Reflection\s*Enabled[:=\s]+(true|false|yes|no|on|off)/i,
         ])
         return m ? String(normalizeBool(m[1] as any)) : null
@@ -846,7 +847,7 @@ export function extractAirlockSummary(text: string): Record<(typeof AIRLOCK_FIEL
       case 'Self Service Enabled': {
         if (stats.selfService.length > 0) return latestOf(stats.selfService)
         const m = findFirst(lines, [
-          /self\s*service.*?(enabled|disabled|on|off|true|false)/i,
+          /self\s*service.*?\b(enabled|disabled|on|off|true|false)\b/i,
           /Self\s*Service[:=\s]+(true|false|yes|no|on|off)/i,
         ])
         return m ? String(normalizeBool(m[1] as any)) : null
@@ -1093,6 +1094,8 @@ function escapeRegex(s: string) {
 function isWindowsSummary(data?: Record<AirlockField, string>): boolean {
   if (!data) return false
   if (data['Operating System']?.startsWith('Windows')) return true
+  // Only the Windows agent writes slash dates, so a rotated log with no start line or executions still counts
+  if (/^\d{1,2}\/\d{1,2}\/\d{4} /.test(data['Log Period'] ?? '')) return true
   return /^[A-Za-z]:\\|^\\\\/.test(data['Top Executed File'] ?? '')
 }
 
@@ -1103,10 +1106,12 @@ function windowsFieldSearchString(key: AirlockField, data: Record<AirlockField, 
     case 'Agent Stops':
       return 'Airlock Digital - Closed!'
     case 'Debug Logging':
-      return '[AP]M DEBUG \\['
+      // 12- or 24-hour times
+      return '(:\\d\\d|[AP]M) DEBUG \\['
     case 'Errors and Warnings':
-      // A blocked browser extension is an ERROR row too, but it is a decision, not an agent error
-      return '(ERROR|WARN) \\[\\d+\\] (?!\\[EXT-BLOCK\\] Extension Title)'
+      // A blocked browser extension is an ERROR row too, but it is a decision, not an agent error.
+      // Anchored to the level column, as search ignores case and "error [" turns up in messages.
+      return '^\\S+ \\S+(?: [AP]M)? (ERROR|WARN) \\[\\d+\\] (?!\\[EXT-BLOCK\\] Extension Title)'
     case 'Agent Memory':
       return 'Current Stats ~'
     case 'Kernel Mode':
@@ -1255,10 +1260,10 @@ export function getAirlockFieldSearchString(key: (typeof AIRLOCK_FIELDS)[number]
     case 'Blocklist Metarules loaded': {
       // OS-aware: Linux => 'Loading metarules', Windows => 'Loading Blocklist Metarule'
       if (data) {
+        if (data[key].includes('rule checks')) return 'CheckBlocklistMetaRule:'
         const top = data['Top Executed File']
         if (top && top !== '—') {
           const fileOnly = top.replace(/\s*\(\d+\)\s*$/, '')
-          if (data[key].includes('rule checks')) return 'CheckBlocklistMetaRule:'
           if (fileOnly.startsWith('/')) return 'Loading metarules'
           if (/^[A-Za-z]:\\|^\\\\/.test(fileOnly)) return 'Loading Blocklist Metarule'
         }
@@ -1269,10 +1274,10 @@ export function getAirlockFieldSearchString(key: (typeof AIRLOCK_FIELDS)[number]
     case 'Allowlist Metarules loaded':
       // Linux: "Loading ametarules  Metarule:"; Windows: "Loading Allowlist Metarule:"
       if (data) {
+        if (data[key].includes('rule checks')) return 'CheckAllowMetaRule:'
         const top = data['Top Executed File']
         if (top && top !== '—') {
           const fileOnly = top.replace(/\s*\(\d+\)\s*$/, '')
-          if (data[key].includes('rule checks')) return 'CheckAllowMetaRule:'
           if (fileOnly.startsWith('/')) return 'Loading ametarules'
         }
       }
@@ -1335,10 +1340,12 @@ export function getAirlockFieldSearchString(key: (typeof AIRLOCK_FIELDS)[number]
     case 'Agent Stops':
       return 'Closing fanotify'
     case 'Debug Logging':
-      return 'Debug Logging is'
+      // The value counts DEBUG rows, so a rotated log without the "Debug Logging is" line still has hits
+      return '\\d DEBUG |Debug Logging is'
     case 'Errors and Warnings':
-      // ERROR and WARN lines start with [file.go:123]; some failures are written as "INFO  ERROR: ..."
-      return '(ERROR|WARN) (\\[|ERROR: )'
+      // ERROR and WARN lines start with [file.go:123]; some failures are written as "INFO  ERROR: ...".
+      // Anchored to the level column, as search ignores case and "error [" turns up in messages.
+      return '^\\S+ \\S+ (ERROR|WARN) (\\[|ERROR: )'
     case 'Agent PID':
       return 'Airlock PID:'
     case 'Agent Hash':

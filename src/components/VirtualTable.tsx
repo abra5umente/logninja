@@ -234,7 +234,8 @@ export default function VirtualTable({ rows, height: propHeight, highlightRe = n
       if (!row) return
       const text = row.raw || `${formatEntryTime(row)} ${row.level} ${row.message}`
       e.preventDefault()
-      try { navigator.clipboard.writeText(text) } catch {}
+      // writeText rejects (rather than throws) when the clipboard is blocked
+      navigator.clipboard?.writeText(text).catch(() => {})
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)

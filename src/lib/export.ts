@@ -66,7 +66,9 @@ export function buildMarkdownSummary(rows: LogEntry[], filters: FiltersState, bo
   const activeLevels = filters.selectedLevels && filters.selectedLevels.length > 0
     ? filters.selectedLevels.join(', ')
     : filters.selectedLevel || 'all'
-  const query = filters.query ? (filters.useRegex ? `regex: ${filters.query}` : `text: ${filters.query}`) : 'none'
+  // Only filter mode hides rows; find and highlight-only leave every row in, so say so
+  const searchHow = filters.searchMode === 'filter' && !filters.highlightOnly ? '' : ' (highlighted, not filtered)'
+  const query = filters.query ? (filters.useRegex ? `regex: ${filters.query}` : `text: ${filters.query}`) + searchHow : 'none'
   const timeRange = filters.timeRange ? `${filters.timeRange.start.toISOString()} → ${filters.timeRange.end.toISOString()}` : 'none'
 
   const lines: string[] = []
@@ -77,6 +79,7 @@ export function buildMarkdownSummary(rows: LogEntry[], filters: FiltersState, bo
   if (filters.searchSteps?.length) lines.push(`- Searching within: ${filters.searchSteps.map(describeStep).join(' › ')}`)
   lines.push(`- Search: ${query}`)
   lines.push(`- Time filter: ${timeRange}`)
+  if (filters.showBookmarksOnly) lines.push(`- Bookmarks only, with ${filters.bookmarkContext} lines of context`)
   lines.push('')
   lines.push(`## Counts by Level`)
   for (const lvl of levelOrder) {
@@ -104,6 +107,7 @@ export function buildMarkdownSummary(rows: LogEntry[], filters: FiltersState, bo
 }
 
 function sanitizeMd(s: string) {
-  // Avoid breaking Markdown with backticks and pipes
-  return s.replace(/`/g, '\\`').replace(/\|/g, '\\|')
+  // Avoid breaking Markdown with backticks and pipes, and indent a multi-line message's later
+  // lines so they stay inside its list item
+  return s.replace(/`/g, '\\`').replace(/\|/g, '\\|').replace(/\n/g, '\n  ')
 }

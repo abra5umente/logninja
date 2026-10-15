@@ -111,3 +111,20 @@ describe('queryFromSearch', () => {
     expect(queryFromSearch('(a)|(b)', true).include[0].kind).toBe('regex')
   })
 })
+
+describe('edge cases', () => {
+  it('keeps spaces at either end of a text term', () => {
+    expect(matches(q('any', ['error ']), 'an error here')).toBe(true)
+    expect(matches(q('any', ['error ']), 'two errors')).toBe(false)
+    expect(matches(q('any', [' id']), 'user id=5')).toBe(true)
+    expect(matches(q('any', [' id']), 'userid=5')).toBe(false)
+  })
+
+  it('refuses backreferences and named groups, which combining would break', () => {
+    expect(validateTerm(createTerm('(b)\\1', 'regex')).valid).toBe(false)
+    expect(validateTerm(createTerm('(?<x>a)\\k<x>', 'regex')).valid).toBe(false)
+    expect(validateTerm(createTerm('(?<x>a)', 'regex')).valid).toBe(false)
+    expect(validateTerm(createTerm('(?<=a)b(?<!c)', 'regex')).valid).toBe(true)
+    expect(validateTerm(createTerm('C:\\\\1', 'regex')).valid).toBe(true)
+  })
+})

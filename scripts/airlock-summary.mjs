@@ -60,6 +60,7 @@ function extract(fields, text) {
         return m ? m[1] : null
       }
       case 'Proxy Configured': {
+        if (lines.some(l => /proxy\s+not\s+configured/i.test(l))) return 'No'
         const m = findFirst(lines, [
           /proxy.*?(configured|enabled)[:=\s]+(true|false|yes|no|on|off)/i,
         ])
@@ -67,7 +68,7 @@ function extract(fields, text) {
       }
       case 'Primary Airlock Server': {
         const m = findFirst(lines, [
-          /(primary\s*airlock\s*server|primary\s*server|server\s*(?:url|host))[:=\s]+([^\s,;]+)/i,
+          /(primary\s*airlock\s*server|primary\s*server|server\s*(?:url|host))[:=\s~]+([^\s,;~]+)/i,
         ])
         return m ? m[2] : null
       }
@@ -92,14 +93,17 @@ function extract(fields, text) {
         return m ? m[1] : null
       }
       case 'Audit Mode': {
-        const m = findFirst(lines, [
-          /audit\s*mode[:=\s]+(enabled|disabled|on|off|true|false)/i,
-        ])
-        return m ? normalizeBool(m[1]) : null
+        // The latest value, as the mode can change while the agent runs
+        let last = null
+        for (const l of lines) {
+          const m = l.match(/audit\s*mode[:=\s]+(enabled|disabled|on|off|true|false)\b/i)
+          if (m) last = m[1]
+        }
+        return last ? normalizeBool(last) : null
       }
       case 'AutoUpdate Enabled': {
         const m = findFirst(lines, [
-          /(autoupdate|auto\s*update).*?(enabled|disabled|on|off|true|false)/i,
+          /(autoupdate|auto\s*update).*?\b(enabled|disabled|on|off|true|false)\b/i,
         ])
         return m ? normalizeBool(m[2]) : null
       }

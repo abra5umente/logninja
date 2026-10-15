@@ -69,7 +69,7 @@ export default function App() {
   const [airlockFileId, setAirlockFileId] = useState<string | null>(null)
   // Bookmarks are keyed by entryKey (file + line), not index, so they stay on their line when files come and go
   const [bookmarked, setBookmarked] = useState<Set<string>>(new Set())
-  const [loadTime, setLoadTime] = useState<number>(0)
+  const [loadStats, setLoadStats] = useState({ files: 0, ms: 0, lines: 0 })
   const [showLoadBanner, setShowLoadBanner] = useState(false)
   const bookmarkedRows = useMemo(() => entries.filter(e => bookmarked.has(entryKey(e))), [entries, bookmarked])
   const toggleBookmark = (key: string) => setBookmarked(prev => { const n = new Set(prev); if (n.has(key)) n.delete(key); else n.add(key); return n })
@@ -77,6 +77,7 @@ export default function App() {
   const [selectedKey, setSelectedKey] = useState<string | null>(null)
   const [centerView, setCenterView] = useState<CenterView>('rows')
   const [isDraggingGlobal, setIsDraggingGlobal] = useState(false)
+  const dragDepth = useRef(0)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [loadingStage, setLoadingStage] = useState<'idle' | 'loading' | 'complete'>('idle')
   const [loadingFileCount, setLoadingFileCount] = useState(0)
@@ -131,8 +132,8 @@ export default function App() {
     return () => resizeObserver.disconnect()
   }, [])
 
-  const onText = (text: string, name: string) => {
-    const startTime = performance.now()
+  // Parses and adds one file; returns how many entries it had
+  const onText = (text: string, name: string): number => {
 
     // Generate unique file ID
     const fileId = `file-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
@@ -173,8 +174,7 @@ export default function App() {
       return mergedEntries.map((entry, idx) => ({ ...entry, index: idx }))
     })
 
-    setLoadTime(performance.now() - startTime)
-    setShowLoadBanner(true)
+    return parsed.length
   }
 
   // Read dropped or browsed files. Any name is accepted (server.log.1, syslog), but archives and other
@@ -184,15 +184,24 @@ export default function App() {
     setLoadingStage('loading')
     setLoadingFileCount(files.length)
     const skipped: string[] = []
+    // The banner reports this batch: how many files, how long they took to parse, how many entries
+    let loaded = 0, parseMs = 0, lines = 0
     for (const file of files) {
       try {
         const text = await readLogFile(file)
-        if (text === null) skipped.push(file.name)
-        else onText(text, file.name)
+        if (text === null) { skipped.push(file.name); continue }
+        const t0 = performance.now()
+        lines += onText(text, file.name)
+        parseMs += performance.now() - t0
+        loaded++
       } catch (err) {
         console.error(`Failed to read ${file.name}:`, err)
         skipped.push(file.name)
       }
+    }
+    if (loaded > 0) {
+      setLoadStats({ files: loaded, ms: parseMs, lines })
+      setShowLoadBanner(true)
     }
     setSkippedFiles(skipped)
     setLoadingStage('complete')
@@ -299,11 +308,12 @@ export default function App() {
   }, [entries, filters.selectedFiles, filters.selectedLevels, filters.selectedLevel, filters.searchMode, filters.highlightOnly, matchesQuery, stepsMatch])
   const showTimelineHits = filters.searchMode === 'find' || filters.highlightOnly ? matchesQuery : null
 
-  // Find mode: the rows that match the search, by entryKey
+  // Find mode: the rows that match the search, by entryKey. From the rows shown, so with
+  // "bookmarks only" on, Enter doesn't jump to rows that aren't in the table.
   const matchingKeys = useMemo(() => {
     if (filters.searchMode !== 'find' || !matchesQuery) return []
-    return baseFiltered.filter(matchesQuery).map(entryKey)
-  }, [baseFiltered, filters.searchMode, matchesQuery])
+    return filtered.filter(matchesQuery).map(entryKey)
+  }, [filtered, filters.searchMode, matchesQuery])
 
   // Navigate to next/previous match
   const goToNextMatch = () => {
@@ -420,7 +430,8 @@ export default function App() {
     document.body.appendChild(a)
     a.click()
     a.remove()
-    URL.revokeObjectURL(url)
+    // Revoking straight after click() can cancel the download in some browsers
+    setTimeout(() => URL.revokeObjectURL(url), 60_000)
   }
 
   const runCopyCsv = async () => {
@@ -446,9 +457,15 @@ export default function App() {
   }
 
   // From the patterns view: filter the table to one pattern's rows via the search box,
-  // so the query stays visible and editable.
+  // so the query stays visible and editable. Patterns were grouped from the rows a filter-mode
+  // search left, so that search is kept as a "search within" step rather than replaced.
   const showPatternRows = (regex: string) => {
-    setFilters(f => ({ ...f, query: regex, useRegex: true, searchMode: 'filter', highlightOnly: false, currentMatchIndex: 0 }))
+    setFilters(f => {
+      const searchSteps = f.searchMode === 'filter' && !f.highlightOnly && !f.showBookmarksOnly
+        ? addSearchStep(f.searchSteps, f.query, f.useRegex, false)
+        : f.searchSteps
+      return { ...f, searchSteps, query: regex, useRegex: true, searchMode: 'filter', highlightOnly: false, currentMatchIndex: 0 }
+    })
     setCenterView('rows')
   }
 
@@ -482,9 +499,9 @@ export default function App() {
 
       {showLoadBanner && (
         <LoadBanner
-          fileName={loadedFiles.length > 0 ? `${loadedFiles.length} file${loadedFiles.length > 1 ? 's' : ''}` : ''}
-          loadTime={loadTime}
-          entriesCount={entries.length}
+          fileName={`${loadStats.files} file${loadStats.files === 1 ? '' : 's'}`}
+          loadTime={loadStats.ms}
+          entriesCount={loadStats.lines}
           onClose={closeLoadBanner}
         />
       )}
@@ -517,16 +534,22 @@ export default function App() {
 
       <div
         className="relative z-10 w-full h-screen overflow-hidden flex flex-col p-4"
-        onDragOver={(e) => { e.preventDefault(); setIsDraggingGlobal(true) }}
-        onDragLeave={(e) => {
-          // Only set false if leaving the main container
-          if (e.currentTarget === e.target) {
-            setIsDraggingGlobal(false)
-          }
+        onDragEnter={(e) => {
+          // Only for files: dragging selected text around the page isn't a load
+          if (!e.dataTransfer.types.includes('Files')) return
+          dragDepth.current++
+          setIsDraggingGlobal(true)
+        }}
+        onDragOver={(e) => e.preventDefault()}
+        onDragLeave={() => {
+          // Enter and leave fire for every child the pointer crosses, and leaving the window from over a
+          // child never reaches the container itself, so count them rather than checking the target
+          if (dragDepth.current > 0 && --dragDepth.current === 0) setIsDraggingGlobal(false)
         }}
         onDrop={async (e) => {
           e.preventDefault()
           e.stopPropagation()
+          dragDepth.current = 0
           setIsDraggingGlobal(false)
 
           await loadFiles(Array.from(e.dataTransfer.files))
@@ -577,7 +600,7 @@ export default function App() {
               <LogSummary
                 entries={entries}
                 fileName={loadedFiles.length > 0 ? loadedFiles.map(f => f.name).join(', ') : ''}
-                loadTime={loadTime}
+                loadTime={loadStats.ms}
               />
             )}
 

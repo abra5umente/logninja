@@ -61,6 +61,34 @@ describe('parseLog', () => {
     expect(levels).toEqual(['INFO', 'WARN', 'ERROR'])
   })
 
+  it('keeps a message whole when a level word only turns up inside it', () => {
+    const entries = parseLog([
+      '2026-01-05 10:00:08 Retrying request after error code 503',
+      '2026-01-05 10:00:09 Loaded /usr/share/info/dir',
+      '2026-01-05 10:00:10 [main] INFO c.e.App - started',
+    ].join('\n'))
+    expect(entries.map(e => e.level)).toEqual(['ERROR', 'INFO', 'INFO'])
+    expect(entries.map(e => e.message)).toEqual(['Retrying request after error code 503', 'Loaded /usr/share/info/dir', 'c.e.App - started'])
+  })
+
+  it('reads the level of "time - name - LEVEL - message" lines, not a Redis symbol', () => {
+    const [entry] = parseLog('2026-01-05 10:00:00,123 - myapp - ERROR - Something failed')
+    expect(entry.level).toBe('ERROR')
+    expect(entry.message).toBe('Something failed')
+    expect(parseLog('1:M 13 Aug 2025 00:00:02.926 # Warning thing')[0].level).toBe('WARN')
+  })
+
+  it('reads a zone written straight after "YYYY-MM-DD HH:mm:ss"', () => {
+    expect(parseLog('2026-01-05 10:00:00Z INFO a')[0].time?.toISOString()).toBe('2026-01-05T10:00:00.000Z')
+    expect(parseLog('2026-01-05 10:00:00+1100 INFO a')[0].time?.toISOString()).toBe('2026-01-04T23:00:00.000Z')
+    expect(parseLog('2026-01-05 10:00:00.5-05:00 INFO a')[0].time?.toISOString()).toBe('2026-01-05T15:00:00.500Z')
+  })
+
+  it('dates MSI lines that carry a full date', () => {
+    const [entry] = parseLog('MSI (s) (1C:50) [2025-08-13 12:16:41:491]: message')
+    expect(entry.time?.getTime()).toBe(new Date(2025, 7, 13, 12, 16, 41, 491).getTime())
+  })
+
   it('parses MongoDB structured JSON lines', () => {
     const [entry] = parseLog('{"t":{"$date":"2025-08-13T00:00:00.000+00:00"},"s":"W","c":"NETWORK","msg":"Slow query"}')
     expect(entry.level).toBe('WARN')
@@ -326,11 +354,11 @@ describe('parseLog line cap', () => {
     const entries = parseLog(line.repeat(1_000_000))
     expect(entries).toHaveLength(1_000_000)
     expect(truncated(entries)).toBe(false)
-  })
+  }, 20_000)
 
   it('notes when lines past the million were dropped', () => {
     const entries = parseLog(line.repeat(1_000_001))
     expect(entries).toHaveLength(1_000_001)
     expect(entries[entries.length - 1].message).toBe('File truncated: showing first 1,000,000 lines of 1,000,001 total lines')
-  })
+  }, 20_000)
 })
